@@ -3,6 +3,7 @@
 Rebase Bot is a tool that allows you to synchronize code between repositories using `git rebase` command and then create a PR in GitHub. The work is based on ShiftStack's [merge bot](https://github.com/shiftstack/merge-bot/tree/main/src/merge_bot).
 
 ## Dest and Source parameters
+
 The bot takes a desired branch in `dest` repository and rebases it onto a branch in the `source` repository.
 The `source` can be any git repository, but `dest` must belong to GitHub. Therefore the format for `--source` and `--dest` is slightly different.
 
@@ -45,18 +46,21 @@ Before using the application mode you need to create 2 GitHub applications: `app
 
 `app` should be installed in the `dest` GitHub organization with the following permissions:
 
-    - Contents: Read
-    - Metadata: Read-only
-    - Pull requests: Read & Write
+```text
+- Contents: Read
+- Metadata: Read-only
+- Pull requests: Read & Write
+```
 
 `cloner` application is to be installed in the `rebase` GitHub organization with the permissions as follows:
 
-    - Contents: Read & Write
-    - Metadata: Read-only
-    - Workflows: Read & Write
+```text
+- Contents: Read & Write
+- Metadata: Read-only
+- Workflows: Read & Write
+```
 
 Here are instructions on how to [create](https://docs.github.com/en/developers/apps/building-github-apps/creating-a-github-app) and [install](https://docs.github.com/en/developers/apps/managing-github-apps/installing-github-apps) a GitHub application.
-
 
 When both applications are successfully installed, you need to download their private keys and store in a file on a local disk.
 
@@ -109,9 +113,7 @@ If you want to be notified in Slack about the status of recent rebases, you can 
 This option allows to manage UPSTREAM commit message tags policy.
 
 - `--tag-policy=none` will take all commits into the rebase PR, regardless of their tags, even including `UPSTREAM: <drop>`.
-
 - `--tag-policy=soft` if the commit has `UPSTREAM: <something>` it will be taken into account, otherwise we keep it.
-
 - `--tag-policy=strict` is similar to the previous one, but it discards commits without "UPSTREAM:" tags.
 
 Default value is `none`.
@@ -163,9 +165,10 @@ will not be modified by the bot on further runs.
 However, a pull request title like
 `JIRABUG-XXXX: Merge https://github.com/kubernetes/autoscaler:master (d3ec0c4) into master`
 will be updated by the bot on subsequent runs to reflect the new commit hash,
-but the `JIRABUG-XXXX: ` portion will not be modified.
+but the `JIRABUG-XXXX:`  portion will not be modified.
 
 ## Automatic ART pull request inclusion
+
 Often when a new version of Go comes out, the ART pull request that updates the build image cannot merge without changes from upstream,
  and the rebase cannot merge with the old Go version, requiring manual user intervention.
 
@@ -177,11 +180,11 @@ User-provided scripts can be configured to execute at specific points of the bot
 You can specify a path to the script you want to run using the following parameters. The script can be any executable file.
 Lifecycle hook parameters accept one or more script location arguments, which are executed in the order they are provided.
 
-- **`--pre-rebase-hook`**: Executed when repository is setup with `rebase` branch checked out on `source/branch` before rebase.
-- **`--pre-carry-commit-hook`**: Executed before carrying each commit during the rebase process. The upstream is merged into the rebase branch.
-- **`--post-rebase-hook`**: Executed after the rebase process is completed.
-- **`--pre-push-rebase-branch-hook`**: Executed before pushing the rebase branch to the remote repository.
-- **`--pre-create-pr-hook`**: Executed before creating the pull request.
+- `--pre-rebase-hook`: Executed when repository is setup with `rebase` branch checked out on `source/branch` before rebase.
+- `--pre-carry-commit-hook`: Executed before carrying each commit during the rebase process. The upstream is merged into the rebase branch.
+- `--post-rebase-hook`: Executed after the rebase process is completed.
+- `--pre-push-rebase-branch-hook`: Executed before pushing the rebase branch to the remote repository.
+- `--pre-create-pr-hook`: Executed before creating the pull request.
 
 ### Script sources
 
@@ -210,7 +213,7 @@ To ensure scripts stored within the repository are available in all stages of th
 *Note: `gitRef` can be a branch name, tag name, or commit hash.*
 
 ##### Example
-    
+
 The following example will attach script to be run the last during POST_REBASE_HOOK from `rebasebot/generate-script.sh` file stored on the `dest/main` branch.
 
 ```sh
@@ -243,12 +246,12 @@ rebasebot --pre-create-pr-hook _BUILTIN_/example.sh
 
 Some rebasebot arguments are available in lifecycle hook scripts as environment variables:
 
-- **`REBASEBOT_SOURCE`**: Name of the target branch on source remote.
-- **`REBASEBOT_DEST`**: Name of the target branch on dest remote.
-- **`REBASEBOT_REBASE`**: Name of the target branch on rebase remote.
-- **`REBASEBOT_WORKING_DIR`**: Path to the repository working directory.
-- **`REBASEBOT_GIT_USERNAME`**: Committer username from `--git-username`.
-- **`REBASEBOT_GIT_EMAIL`**: Committer email from `--git-email`.
+- `REBASEBOT_SOURCE`: Name of the target branch on source remote.
+- `REBASEBOT_DEST`: Name of the target branch on dest remote.
+- `REBASEBOT_REBASE`: Name of the target branch on rebase remote.
+- `REBASEBOT_WORKING_DIR`: Path to the repository working directory.
+- `REBASEBOT_GIT_USERNAME`: Committer username from `--git-username`.
+- `REBASEBOT_GIT_EMAIL`: Committer email from `--git-email`.
 
 *Note: Remotes are always `source`, `dest`, and `rebase`. The local branch is called rebase.*
 
@@ -260,6 +263,7 @@ By default, lifecycle hooks are only executed when a rebase happened. However, t
 - Performing maintenance tasks or code generation.
 
 Enable this behavior with the opt-in `--always-run-hooks` flag. When this flag is enabled:
+
 - The main lifecycle hooks (`--pre-rebase-hook`, `--pre-carry-commit-hook`, `--post-rebase-hook`) will execute **even if no rebase is required**.
 - Hooks that depend on specific actions (e.g., `--pre-push-rebase-branch-hook`, `--pre-create-pr-hook`) will still only run if that action occurs.
 - Built-in hooks (e.g. triggered by flags, `--update-go-modules`) are also executed as usual.
@@ -272,10 +276,11 @@ Rebasebot offers the capability to dynamically determine the source branch or ta
 Instead of statically specifying the `--source` parameter, utilize `--source-repo` in conjunction with `--source-ref-hook`. The script provided to `--source-ref-hook` is executed before the rebasebot git workspace setup.
 
 Possible formats for path to the script:
-* Local filepath
-* Builtin with `_BUILTIN_/source-ref-hooks/` prefix
-* A script stored in a GitHub repository using the `git:` prefix.
-    * Format: `git:https_repository_clone_url/branch:repo/relative/path/to/script`
+
+- Local filepath
+- Builtin with `_BUILTIN_/source-ref-hooks/` prefix
+- A script stored in a GitHub repository using the `git:` prefix.
+  - Format: `git:https_repository_clone_url/branch:repo/relative/path/to/script`
 
 ### Script requirements
 
@@ -287,7 +292,7 @@ You may include any logic to determine the source ref (e.g. call Github APIs).
 
 ### Environment variables available in the source ref hook script
 
-- **`REBASEBOT_SOURCE_REPO`** - Source repository in the format `namespace/repository`.
+- `REBASEBOT_SOURCE_REPO`: Source repository in the format `namespace/repository`.
 
 ### Built-in source reference hook scripts
 
@@ -329,4 +334,4 @@ rebasebot --source https://github.com/kubernetes/cloud-provider-azure:master \
 
 Example 3. Rebasebot usage in OpenShift CI pipeline.
 
-https://github.com/openshift/release/blob/master/ci-operator/config/openshift-eng/rebasebot/openshift-eng-rebasebot-main.yaml
+[https://github.com/openshift/release/blob/master/ci-operator/config/openshift-eng/rebasebot/openshift-eng-rebasebot-main.yaml](https://github.com/openshift/release/blob/master/ci-operator/config/openshift-eng/rebasebot/openshift-eng-rebasebot-main.yaml)

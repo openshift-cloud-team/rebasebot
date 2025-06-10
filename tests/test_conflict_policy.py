@@ -15,10 +15,12 @@
 """Tests for --conflict-policy behavior."""
 
 from __future__ import annotations
+
 import logging
 from unittest.mock import MagicMock, patch
 
 from rebasebot import cli
+
 from .conftest import CommitBuilder
 
 # File content simulating upstream with original formatting
@@ -80,9 +82,14 @@ class TestConflictPolicy:
     @patch("rebasebot.bot._is_pr_available")
     @patch("rebasebot.bot._message_slack")
     def test_auto_policy_silent_on_conflict(
-        self, mocked_message_slack, mocked_is_pr_available,
-        mocked_push_rebase_branch, mocked_create_pr,
-        init_test_repositories, fake_github_provider, tmpdir
+        self,
+        mocked_message_slack,
+        mocked_is_pr_available,
+        mocked_push_rebase_branch,
+        mocked_create_pr,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
     ):
         """With auto policy, -Xtheirs conflicts resolve silently."""
         source, rebase, dest = init_test_repositories
@@ -90,24 +97,18 @@ class TestConflictPolicy:
         mocked_push_rebase_branch.return_value = True
 
         # Replace test.go with structured code in source (initial state)
-        CommitBuilder(source).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("set up base code")
+        CommitBuilder(source).update_file("test.go", _ORIGINAL_CODE).commit("set up base code")
 
         # Sync dest to have the same base
-        CommitBuilder(dest).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("UPSTREAM: <carry>: sync base")
+        CommitBuilder(dest).update_file("test.go", _ORIGINAL_CODE).commit("UPSTREAM: <carry>: sync base")
 
         # Upstream adds new fields
-        CommitBuilder(source).update_file(
-            "test.go", _UPSTREAM_ADDED_CODE
-        ).commit("Add KMS key support")
+        CommitBuilder(source).update_file("test.go", _UPSTREAM_ADDED_CODE).commit("Add KMS key support")
 
         # Downstream carry patch reformats and adds timeout
-        CommitBuilder(dest).update_file(
-            "test.go", _DOWNSTREAM_CARRY_CODE
-        ).commit("UPSTREAM: <carry>: add snapshot timeout")
+        CommitBuilder(dest).update_file("test.go", _DOWNSTREAM_CARRY_CODE).commit(
+            "UPSTREAM: <carry>: add snapshot timeout"
+        )
 
         args = MagicMock()
         args.source = source
@@ -125,9 +126,7 @@ class TestConflictPolicy:
         args.ignore_manual_label = False
         args.dry_run = True
 
-        result = cli.rebasebot_run(
-            args, slack_webhook=None,
-            github_app_wrapper=fake_github_provider)
+        result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
         # Should succeed silently
         assert result is True
 
@@ -136,30 +135,30 @@ class TestConflictPolicy:
     @patch("rebasebot.bot._is_pr_available")
     @patch("rebasebot.bot._message_slack")
     def test_warn_policy_logs_warning_on_content_loss(
-        self, mocked_message_slack, mocked_is_pr_available,
-        mocked_push_rebase_branch, mocked_create_pr,
-        init_test_repositories, fake_github_provider, tmpdir, caplog
+        self,
+        mocked_message_slack,
+        mocked_is_pr_available,
+        mocked_push_rebase_branch,
+        mocked_create_pr,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
+        caplog,
     ):
         """With warn policy, warnings are logged but rebase succeeds."""
         source, rebase, dest = init_test_repositories
         mocked_is_pr_available.return_value = None, False
         mocked_push_rebase_branch.return_value = True
 
-        CommitBuilder(source).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("set up base code")
+        CommitBuilder(source).update_file("test.go", _ORIGINAL_CODE).commit("set up base code")
 
-        CommitBuilder(dest).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("UPSTREAM: <carry>: sync base")
+        CommitBuilder(dest).update_file("test.go", _ORIGINAL_CODE).commit("UPSTREAM: <carry>: sync base")
 
-        CommitBuilder(source).update_file(
-            "test.go", _UPSTREAM_ADDED_CODE
-        ).commit("Add KMS key support")
+        CommitBuilder(source).update_file("test.go", _UPSTREAM_ADDED_CODE).commit("Add KMS key support")
 
-        CommitBuilder(dest).update_file(
-            "test.go", _DOWNSTREAM_CARRY_CODE
-        ).commit("UPSTREAM: <carry>: add snapshot timeout")
+        CommitBuilder(dest).update_file("test.go", _DOWNSTREAM_CARRY_CODE).commit(
+            "UPSTREAM: <carry>: add snapshot timeout"
+        )
 
         args = MagicMock()
         args.source = source
@@ -178,49 +177,42 @@ class TestConflictPolicy:
         args.dry_run = True
 
         with caplog.at_level(logging.WARNING):
-            result = cli.rebasebot_run(
-                args, slack_webhook=None,
-                github_app_wrapper=fake_github_provider)
+            result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
 
         assert result is True
-        warning_messages = [
-            r.message.lower() for r in caplog.records
-            if r.levelno >= logging.WARNING
-        ]
-        assert any(
-            "upstream content may have been dropped" in m
-            for m in warning_messages
-        ), f"Expected warning about dropped content, got: {warning_messages}"
+        warning_messages = [r.message.lower() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("upstream content may have been dropped" in m for m in warning_messages), (
+            f"Expected warning about dropped content, got: {warning_messages}"
+        )
 
     @patch("rebasebot.bot._create_pr")
     @patch("rebasebot.bot._push_rebase_branch")
     @patch("rebasebot.bot._is_pr_available")
     @patch("rebasebot.bot._message_slack")
     def test_strict_policy_fails_on_content_loss(
-        self, mocked_message_slack, mocked_is_pr_available,
-        mocked_push_rebase_branch, mocked_create_pr,
-        init_test_repositories, fake_github_provider, tmpdir
+        self,
+        mocked_message_slack,
+        mocked_is_pr_available,
+        mocked_push_rebase_branch,
+        mocked_create_pr,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
     ):
         """With strict policy, upstream content loss causes failure."""
         source, rebase, dest = init_test_repositories
         mocked_is_pr_available.return_value = None, False
         mocked_push_rebase_branch.return_value = True
 
-        CommitBuilder(source).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("set up base code")
+        CommitBuilder(source).update_file("test.go", _ORIGINAL_CODE).commit("set up base code")
 
-        CommitBuilder(dest).update_file(
-            "test.go", _ORIGINAL_CODE
-        ).commit("UPSTREAM: <carry>: sync base")
+        CommitBuilder(dest).update_file("test.go", _ORIGINAL_CODE).commit("UPSTREAM: <carry>: sync base")
 
-        CommitBuilder(source).update_file(
-            "test.go", _UPSTREAM_ADDED_CODE
-        ).commit("Add KMS key support")
+        CommitBuilder(source).update_file("test.go", _UPSTREAM_ADDED_CODE).commit("Add KMS key support")
 
-        CommitBuilder(dest).update_file(
-            "test.go", _DOWNSTREAM_CARRY_CODE
-        ).commit("UPSTREAM: <carry>: add snapshot timeout")
+        CommitBuilder(dest).update_file("test.go", _DOWNSTREAM_CARRY_CODE).commit(
+            "UPSTREAM: <carry>: add snapshot timeout"
+        )
 
         args = MagicMock()
         args.source = source
@@ -238,9 +230,7 @@ class TestConflictPolicy:
         args.ignore_manual_label = False
         args.dry_run = True
 
-        result = cli.rebasebot_run(
-            args, slack_webhook=None,
-            github_app_wrapper=fake_github_provider)
+        result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
         # Should fail — upstream content was lost
         assert result is False
 
@@ -249,9 +239,14 @@ class TestConflictPolicy:
     @patch("rebasebot.bot._is_pr_available")
     @patch("rebasebot.bot._message_slack")
     def test_strict_policy_succeeds_when_no_conflict(
-        self, mocked_message_slack, mocked_is_pr_available,
-        mocked_push_rebase_branch, mocked_create_pr,
-        init_test_repositories, fake_github_provider, tmpdir
+        self,
+        mocked_message_slack,
+        mocked_is_pr_available,
+        mocked_push_rebase_branch,
+        mocked_create_pr,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
     ):
         """With strict policy, clean cherry-picks succeed (no false positives)."""
         source, rebase, dest = init_test_repositories
@@ -259,16 +254,14 @@ class TestConflictPolicy:
         mocked_push_rebase_branch.return_value = True
 
         # Source adds an unrelated new file
-        CommitBuilder(source).add_file(
-            "new_upstream_file.go",
-            "package main\nfunc upstream() {}\n"
-        ).commit("Add new upstream file")
+        CommitBuilder(source).add_file("new_upstream_file.go", "package main\nfunc upstream() {}\n").commit(
+            "Add new upstream file"
+        )
 
         # Dest adds a different unrelated file (no conflict)
-        CommitBuilder(dest).add_file(
-            "downstream_only.go",
-            "package main\nfunc downstream() {}\n"
-        ).commit("UPSTREAM: <carry>: downstream only file")
+        CommitBuilder(dest).add_file("downstream_only.go", "package main\nfunc downstream() {}\n").commit(
+            "UPSTREAM: <carry>: downstream only file"
+        )
 
         args = MagicMock()
         args.source = source
@@ -286,8 +279,6 @@ class TestConflictPolicy:
         args.ignore_manual_label = False
         args.dry_run = True
 
-        result = cli.rebasebot_run(
-            args, slack_webhook=None,
-            github_app_wrapper=fake_github_provider)
+        result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
         # Should succeed — no conflict, no content loss
         assert result is True

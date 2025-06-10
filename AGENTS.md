@@ -21,6 +21,7 @@ The rebase branch is created by rebasing `dest/branch` onto `source/branch`, the
 ### Core Modules
 
 **`rebasebot/bot.py`** - Main orchestration logic
+
 - Contains the `run()` function that drives the entire rebase workflow
 - Handles git operations: cloning, rebasing, conflict detection, PR creation/updates
 - Implements the "UPSTREAM tag policy" for filtering commits based on commit message tags
@@ -28,6 +29,7 @@ The rebase branch is created by rebasing `dest/branch` onto `source/branch`, the
 - Manages the `rebase/manual` label to pause automatic operations
 
 **`rebasebot/cli.py`** - Command-line interface and argument parsing
+
 - Entry point via `main()` function
 - Parses complex arguments including GitHub branch specifications (`org/repo:branch`)
 - Handles two authentication modes: user token and GitHub App credentials
@@ -35,11 +37,13 @@ The rebase branch is created by rebasing `dest/branch` onto `source/branch`, the
 - Implements dynamic source reference selection via `--source-ref-hook`
 
 **`rebasebot/github.py`** - GitHub API interactions
+
 - `GithubAppProvider`: Manages GitHub authentication (user token or app credentials)
 - `GitHubBranch`: Dataclass for repository/branch specifications
 - Handles GitHub App installation tokens for both PR creation (app) and pushing (cloner)
 
 **`rebasebot/lifecycle_hooks.py`** - Extensibility mechanism
+
 - Defines five lifecycle hook points:
   - `PRE_REBASE`: After workspace setup, before rebase
   - `PRE_CARRY_COMMIT`: Before carrying each commit during rebase
@@ -53,6 +57,7 @@ The rebase branch is created by rebasing `dest/branch` onto `source/branch`, the
 ## Development Commands
 
 ### Setup
+
 ```bash
 # Install dependencies
 make deps
@@ -66,11 +71,13 @@ make install
 ```
 
 ### Testing
+
 ```bash
 make unittests
 ```
 
 ### Linting
+
 ```bash
 make lint
 ```
@@ -82,6 +89,7 @@ make lint
 **User Token Mode**: Single `--github-user-token` parameter pointing to a file with GitHub personal access token
 
 **App Mode**: Requires two GitHub Apps:
+
 - **app**: For PR operations in dest repository (Contents: Read, Metadata: Read-only, Pull requests: Read & Write)
 - **cloner**: For pushing to rebase repository (Contents: Read & Write, Metadata: Read-only, Workflows: Read & Write)
 - Requires `--github-app-id`, `--github-app-key`, `--github-cloner-id`, `--github-cloner-key`
@@ -100,6 +108,7 @@ By default, hooks only run when a rebase is needed. The `--always-run-hooks` fla
 ## Common Workflows
 
 ### Adding a New Lifecycle Hook
+
 1. Create the hook script in `rebasebot/builtin-hooks/` if it's generic enough to be builtin
 2. Make it executable (`chmod +x`)
 3. Access environment variables like `REBASEBOT_WORKING_DIR` for repository access
@@ -107,7 +116,9 @@ By default, hooks only run when a rebase is needed. The `--always-run-hooks` fla
 5. Use stdout/stderr for logging (stderr is captured on failure)
 
 ### Modifying Core Rebase Logic
+
 The main rebase workflow in `bot.py` follows this sequence:
+
 1. `_needs_rebase()`: Check if rebase is necessary
 2. Clone/fetch all three repositories
 3. Execute `PRE_REBASE` hooks
@@ -119,8 +130,11 @@ The main rebase workflow in `bot.py` follows this sequence:
 9. Create or update PR in dest repository
 
 ### Understanding Commit Filtering
+
 The bot filters commits based on:
+
 - `--exclude-commits`: Explicit SHA prefix exclusion list
 - `--tag-policy`: UPSTREAM tag handling (none/soft/strict)
 - `--bot-emails`: Bot email detection for commit squashing
 - ART PR detection for automatic cherry-picking
+
