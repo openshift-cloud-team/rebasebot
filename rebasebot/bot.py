@@ -18,6 +18,7 @@
 import builtins
 import logging
 import os
+import shutil
 import sys
 from collections import defaultdict
 from typing import Optional, Tuple
@@ -523,6 +524,22 @@ def _init_working_dir(
     workdir: str = "."
 ) -> git.Repo:
     gitwd = git.Repo.init(path=workdir)
+
+    # If the source URL changed, stale refs from the previous source repo remain
+    # in the local git store and can corrupt rebase operations (wrong ancestry
+    # checks, wrong commit filtering, wrong cherry-pick detection). Reinitializing
+    # .git is the only safe way to clear them.
+    if "source" in gitwd.remotes and gitwd.remotes["source"].url != source.url:
+        logging.warning(
+            "Source URL changed from %s to %s; reinitializing working directory "
+            "to remove stale refs",
+            gitwd.remotes["source"].url,
+            source.url,
+        )
+        git_dir = gitwd.git_dir
+        gitwd.close()
+        shutil.rmtree(git_dir)
+        gitwd = git.Repo.init(path=workdir)
 
     for remote, url in [
         ("source", source.url),
