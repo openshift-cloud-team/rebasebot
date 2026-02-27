@@ -552,13 +552,17 @@ def _init_working_dir(
             gitwd.create_remote(remote, url)
 
     with gitwd.config_writer() as config:
-        config.set_value("credential", "username", "x-access-token")
         config.set_value("credential", "useHttpPath", "true")
 
         for repo, credentials in [
             (dest.url, github_app_provider.get_app_token()),
             (rebase.url, github_app_provider.get_cloner_token()),
         ]:
+            config.set_value(
+                f'credential "{repo}"',
+                "username",
+                "x-access-token",
+            )
             config.set_value(
                 f'credential "{repo}"',
                 "helper",
