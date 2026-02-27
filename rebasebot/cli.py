@@ -252,6 +252,14 @@ def _parse_cli_arguments():
         "Note: hooks that depend on a push or PR creation step (e.g. PRE_PUSH_REBASE_BRANCH, PRE_CREATE_PR) "
         "will still only run if those actions occur.",
     )
+    parser.add_argument(
+        "--title-prefix",
+        type=str,
+        required=False,
+        default="",
+        help="Prefix to prepend to PR titles. For example, 'UPSTREAM-SYNC' will create "
+             "titles like 'UPSTREAM-SYNC: Merge ...'.",
+    )
 
     return parser.parse_args()
 
@@ -331,7 +339,8 @@ def rebasebot_run(args, slack_webhook, github_app_wrapper):
             dry_run=args.dry_run,
             ignore_manual_label=args.ignore_manual_label,
             hooks=hooks,
-            always_run_hooks=args.always_run_hooks
+            always_run_hooks=args.always_run_hooks,
+            title_prefix=args.title_prefix
         )
 
 

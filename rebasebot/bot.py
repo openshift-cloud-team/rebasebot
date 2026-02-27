@@ -461,13 +461,19 @@ def _is_pr_available(dest_repo: Repository, dest: GitHubBranch, rebase: GitHubBr
 
 
 def _create_pr(
+        *,
         gh_app: github3.GitHub,
         dest: GitHubBranch,
         source: GitHubBranch,
         rebase: GitHubBranch,
-        gitwd: git.Repo
+        gitwd: git.Repo,
+        title_prefix: str = ""
 ) -> str:
     source_head_commit = gitwd.git.rev_parse(f"source/{source.branch}", short=7)
+
+    title = f"Merge {source.url}:{source.branch} ({source_head_commit}) into {dest.branch}"
+    if title_prefix:
+        title = f"{title_prefix}: {title}"
 
     logging.info("Creating a pull request")
 
@@ -482,7 +488,7 @@ def _create_pr(
     gh_pr: requests.Response = gh_app._post(  # pylint: disable=W0212
         f"https://api.github.com/repos/{dest.ns}/{dest.name}/pulls",
         data={
-            "title": f"Merge {source.url}:{source.branch} ({source_head_commit}) into {dest.branch}",
+            "title": title,
             "head": rebase.branch,
             "head_repo": f"{rebase.ns}/{rebase.name}",
             "base": dest.branch,
@@ -711,7 +717,8 @@ def run(
     update_go_modules: bool = False,
     dry_run: bool = False,
     ignore_manual_label: bool = False,
-    always_run_hooks: bool = False
+    always_run_hooks: bool = False,
+    title_prefix: str = ""
 ) -> bool:
     """Run Rebase Bot."""
     gh_app = github_app_provider.github_app
@@ -887,7 +894,14 @@ def run(
             hooks.execute_scripts_for_hook(hook=lifecycle_hooks.LifecycleHook.PRE_CREATE_PR)
             pr_required = _is_pr_required(gitwd, rebase, dest)
             if pr_required:
-                pr_url = _create_pr(gh_app, dest, source, rebase, gitwd)
+                pr_url = _create_pr(
+                    gh_app=gh_app,
+                    dest=dest,
+                    source=source,
+                    rebase=rebase,
+                    gitwd=gitwd,
+                    title_prefix=title_prefix,
+                )
             else:
                 logging.info("No PR required - no changes between rebase and dest.")
                 pr_url = None
