@@ -16,8 +16,9 @@
 
 """This module parses CLI arguments for the Rebase Bot."""
 
-import logging
 import argparse
+import logging
+import os
 import sys
 import tempfile
 from typing import Optional
@@ -38,6 +39,15 @@ class GitHubBranchAction(argparse.Action):
             setattr(namespace, self.dest, parse_github_branch(values))
         except ValueError as e:
             parser.error(str(e))
+
+
+def _default_working_dir() -> str:
+    cache_home_raw = os.environ.get("XDG_CACHE_HOME")
+    if cache_home_raw and os.path.isabs(cache_home_raw):
+        cache_home = cache_home_raw
+    else:
+        cache_home = os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(cache_home, "rebasebot")
 
 
 # parse_cli_arguments parses command line arguments using argparse and returns
@@ -121,8 +131,12 @@ def _parse_cli_arguments():
         "--working-dir",
         type=str,
         required=False,
-        help="The working directory where the git repos will be cloned.",
-        default=".rebase",
+        help=(
+            "The working directory where the git repos will be cloned. "
+            "If omitted, a persistent cache directory outside the current "
+            "working directory is used."
+        ),
+        default=_default_working_dir(),
     )
     parser.add_argument(
         "--github-user-token",
@@ -304,44 +318,54 @@ def rebasebot_run(args, slack_webhook, github_app_wrapper):
     rebasebot_run handles lifecycle hook setup and runs rebasebot
     """
     with tempfile.TemporaryDirectory() as temp_script_dir:
+        working_dir = args.working_dir or _default_working_dir()
+        os.makedirs(working_dir, exist_ok=True)
+        logging.info("Using working directory: %s", working_dir)
+        old_working_dir = args.working_dir
+        args.working_dir = working_dir
+        original_cwd = os.getcwd()
         try:
-            if args.source_repo is not None:
-                lifecycle_hooks.run_source_repo_hook(args=args,
-                                                     github_app_wrapper=github_app_wrapper,
-                                                     temp_script_dir=temp_script_dir)
-        except Exception as e:
-            logging.error(
-                f"Error running source repo hook: {str(e)}",
-                exc_info=True)  # Log the full stack trace
-            sys.exit(1)
+            try:
+                if args.source_repo is not None:
+                    lifecycle_hooks.run_source_repo_hook(args=args,
+                                                         github_app_wrapper=github_app_wrapper,
+                                                         temp_script_dir=temp_script_dir)
+            except Exception as e:
+                logging.error(
+                    f"Error running source repo hook: {str(e)}",
+                    exc_info=True)  # Log the full stack trace
+                sys.exit(1)
 
-        try:
-            hooks = lifecycle_hooks.LifecycleHooks(
-                tmp_script_dir=temp_script_dir, args=args)
-        except Exception as e:
-            logging.error(
-                f"Error occurred while initializing lifecycle hooks: {str(e)}", exc_info=True)
-            sys.exit(1)
+            try:
+                hooks = lifecycle_hooks.LifecycleHooks(
+                    tmp_script_dir=temp_script_dir, args=args)
+            except Exception as e:
+                logging.error(
+                    f"Error occurred while initializing lifecycle hooks: {str(e)}", exc_info=True)
+                sys.exit(1)
 
-        return bot.run(
-            source=args.source,
-            dest=args.dest,
-            rebase=args.rebase,
-            working_dir=args.working_dir,
-            git_username=args.git_username,
-            git_email=args.git_email,
-            github_app_provider=github_app_wrapper,
-            slack_webhook=slack_webhook,
-            tag_policy=args.tag_policy,
-            bot_emails=args.bot_emails,
-            exclude_commits=args.exclude_commits,
-            update_go_modules=args.update_go_modules,
-            dry_run=args.dry_run,
-            ignore_manual_label=args.ignore_manual_label,
-            hooks=hooks,
-            always_run_hooks=args.always_run_hooks,
-            title_prefix=args.title_prefix
-        )
+            return bot.run(
+                source=args.source,
+                dest=args.dest,
+                rebase=args.rebase,
+                working_dir=working_dir,
+                git_username=args.git_username,
+                git_email=args.git_email,
+                github_app_provider=github_app_wrapper,
+                slack_webhook=slack_webhook,
+                tag_policy=args.tag_policy,
+                bot_emails=args.bot_emails,
+                exclude_commits=args.exclude_commits,
+                update_go_modules=args.update_go_modules,
+                dry_run=args.dry_run,
+                ignore_manual_label=args.ignore_manual_label,
+                hooks=hooks,
+                always_run_hooks=args.always_run_hooks,
+                title_prefix=args.title_prefix
+            )
+        finally:
+            os.chdir(original_cwd)
+            args.working_dir = old_working_dir
 
 
 def main():

@@ -521,7 +521,7 @@ def _init_working_dir(
     github_app_provider: GithubAppProvider,
     git_username: str,
     git_email: str,
-    workdir: str = "."
+    workdir: str
 ) -> git.Repo:
     gitwd = git.Repo.init(path=workdir)
 
@@ -782,14 +782,14 @@ def run(
         pass
 
     try:
-        os.chdir(working_dir)
         gitwd = _init_working_dir(
             source=source,
             dest=dest,
             rebase=rebase,
             github_app_provider=github_app_provider,
             git_username=git_username,
-            git_email=git_email
+            git_email=git_email,
+            workdir=working_dir,
         )
     except Exception as ex:
         logging.exception(

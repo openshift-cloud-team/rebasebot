@@ -86,7 +86,7 @@ If you don't want to create a PR, but just to perform a rebase locally, you can 
 
 ### Custom rebase directory
 
-By default the bot clones everything in `.rebase` folder. You can specify another working dir location with `--working-dir` option.
+By default the bot clones everything in a persistent cache directory outside the current working directory (`$XDG_CACHE_HOME/rebasebot` or `~/.cache/rebasebot`). You can specify another working dir location with `--working-dir` option.
 
 ### Golang vendor update
 

@@ -190,12 +190,13 @@ class LifecycleHookScript:
     def __str__(self):
         return self.script_location
 
-    def __call__(self) -> LifecycleHookScriptResult:
+    def __call__(self, cwd: str = None) -> LifecycleHookScriptResult:
         with subprocess.Popen(
             [self.script_file_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            cwd=cwd,
         ) as process:
 
             stdout_lines: List[str] = []
@@ -291,6 +292,7 @@ class LifecycleHooks:
     def __init__(self, tmp_script_dir: str, args):
         self.hooks: dict[LifecycleHook, list[LifecycleHookScript]] = {}
         self.tmp_hook_scripts_dir = tmp_script_dir
+        self.working_dir = args.working_dir if args is not None else None
 
         _setup_environment_variables(args)
 
@@ -338,7 +340,7 @@ class LifecycleHooks:
         for script in self.hooks.get(hook, []):
             logging.info(f"Running {hook} lifecycle hook {script}")
             try:
-                result = script()
+                result = script(cwd=self.working_dir)
                 if result.return_code != 0:
                     raise subprocess.CalledProcessError(
                         result.return_code, cmd=script.script_file_path, output="\n".join(result.stdout),
