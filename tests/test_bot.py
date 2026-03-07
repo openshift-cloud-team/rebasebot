@@ -348,6 +348,26 @@ class TestUpdatePrTitle:
             title=f"OCPCLOUD-2051: Merge {source.url}:{source.branch} (abcdefg) into {dest.branch}"
         )
 
+    def test_upstream_sync_prefix(self):
+        gitwd = MagicMock()
+        gitwd.git.rev_parse.return_value = "abcdefg"
+        pull_req = MagicMock()
+        pull_req.title = "UPSTREAM-SYNC: Merge " \
+            "https://github.com/kubernetes/cloud-provider-aws:master (b80e8ef) into master"
+        pull_req.update.return_value = True
+        source = MagicMock(branch="my-feature",
+                           url="https://github.com/my/repo")
+        dest = MagicMock(branch="main")
+
+        try:
+            _update_pr_title(gitwd, pull_req, source, dest)
+        except Exception as ex:
+            assert False, f"Unexpected exception: {ex}"
+
+        pull_req.update.assert_called_once_with(
+            title=f"UPSTREAM-SYNC: Merge {source.url}:{source.branch} (abcdefg) into {dest.branch}"
+        )
+
     def test_unknown_format_keep_unchanged(self):
         gitwd = MagicMock()
         gitwd.git.rev_parse.return_value = "abcdefg"
