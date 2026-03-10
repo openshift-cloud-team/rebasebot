@@ -4,7 +4,7 @@ set -e  # Exit immediately if a command exits with a non-zero status
 set -o pipefail  # Return the exit status of the last command in the pipe that failed
 
 stage_and_commit(){
-    # If commiter email and name is passed as environment variable then use it.
+    # If committer email and name is passed as environment variable then use it.
     if [[ -z "$REBASEBOT_GIT_USERNAME" || -z "$REBASEBOT_GIT_EMAIL" ]]; then
         author_flag=()
     else
@@ -17,10 +17,8 @@ stage_and_commit(){
     fi
 }
 
-process_go_mod_updates() {
-    echo "Performing go modules update"
-
-    find . -name 'go.mod' -print0 | while IFS= read -r -d '' go_mod_file; do
+reset_go_mod_files() {
+    while IFS= read -r -d '' go_mod_file; do
         local module_base_path
         module_base_path=$(dirname "$go_mod_file")
 
@@ -35,23 +33,64 @@ process_go_mod_updates() {
                 break
             fi
         done
+    done < <(find . -name 'go.mod' -print0)
+}
 
-        pushd "$module_base_path"
+process_go_workspace_updates() {
+    echo "Performing go workspace modules update"
 
-        echo "go mod tidy output for $module_base_path"
+    for filename in "go.work" "go.work.sum"; do
+        if [[ ! -f "$filename" ]]; then
+            continue
+        fi
+        if ! git checkout "source/$REBASEBOT_SOURCE" -- "$filename"; then
+            echo "go.work is downstream only, which is not supported" >&2
+            exit 1
+        fi
+    done
+
+    reset_go_mod_files
+
+    echo "Running go work sync"
+    if ! go work sync; then
+        echo "Unable to run 'go work sync'" >&2
+        exit 1
+    fi
+
+    echo "Running go work vendor"
+    if ! go work vendor; then
+        echo "Unable to run 'go work vendor'" >&2
+        exit 1
+    fi
+
+    stage_and_commit
+}
+
+process_go_mod_updates() {
+    echo "Performing go modules update"
+
+    reset_go_mod_files
+
+    while IFS= read -r -d '' go_mod_file; do
+        local module_base_path
+        module_base_path=$(dirname "$go_mod_file")
+
+        pushd "$module_base_path" > /dev/null || { echo "Failed to cd to $module_base_path" >&2; exit 1; }
+
+        echo "Running go mod tidy for $module_base_path"
         if ! go mod tidy; then
             echo "Unable to run 'go mod tidy' in $module_base_path" >&2
             exit 1
         fi
 
-        echo "go mod vendor output for $module_base_path"
+        echo "Running go mod vendor for $module_base_path"
         if ! go mod vendor; then
             echo "Unable to run 'go mod vendor' in $module_base_path" >&2
             exit 1
         fi
 
-        popd
-    done
+        popd > /dev/null
+    done < <(find . -name 'go.mod' -print0)
 
     stage_and_commit
 }
@@ -62,4 +101,8 @@ if [[ -z "$REBASEBOT_SOURCE" ]]; then
     exit 1
 fi
 
-process_go_mod_updates
+if [[ -f "go.work" ]]; then
+    process_go_workspace_updates
+else
+    process_go_mod_updates
+fi
