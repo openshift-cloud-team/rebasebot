@@ -63,6 +63,56 @@ class TestGoMod:
         assert len(commits) == 3
         assert commits[0].message == "UPSTREAM: <drop>: Updating and vendoring go modules after an upstream rebase\n"
 
+    def test_update_and_commit_go_workspace(self, tmp_go_app_repo):
+        repo_dir, repo = tmp_go_app_repo
+
+        os.chdir(repo_dir)
+        os.system("go mod init example.com/foo")
+        os.system("go mod tidy")
+        os.system("go work init .")
+        repo.git.add(all=True)
+        repo.git.commit("-m", "Init go workspace")
+
+        source = GitHubBranch(repo_dir, "example", "foo",
+                              repo.active_branch.name)
+        repo.create_remote("source", source.url)
+        repo.remotes.source.fetch(source.branch)
+
+        lifecycle_hooks._setup_environment_variables(
+            self._args_stub(repo_dir, source))
+        update_go_modules_script = lifecycle_hooks.LifecycleHookScript(
+            "_BUILTIN_/update_go_modules.sh")
+        update_go_modules_script()
+
+        commits = list(repo.iter_commits())
+
+        assert len(commits) == 3
+        assert commits[0].message == "UPSTREAM: <drop>: Updating and vendoring go modules after an upstream rebase\n"
+
+    def test_update_fails_on_broken_go_mod(self, tmp_go_app_repo):
+        repo_dir, repo = tmp_go_app_repo
+
+        os.chdir(repo_dir)
+        os.system("go mod init example.com/foo")
+        # Write an invalid go.mod that will cause go mod tidy to fail
+        with open(os.path.join(repo_dir, "go.mod"), "w") as f:
+            f.write("this is not a valid go.mod\n")
+        repo.git.add(all=True)
+        repo.git.commit("-m", "Init broken go module")
+
+        source = GitHubBranch(repo_dir, "example", "foo",
+                              repo.active_branch.name)
+        repo.create_remote("source", source.url)
+        repo.remotes.source.fetch(source.branch)
+
+        lifecycle_hooks._setup_environment_variables(
+            self._args_stub(repo_dir, source))
+        update_go_modules_script = lifecycle_hooks.LifecycleHookScript(
+            "_BUILTIN_/update_go_modules.sh")
+        result = update_go_modules_script()
+
+        assert result.return_code != 0
+
     # Test how the function handles an empty commit.
     # This should not error out and exit if working properly.
     def test_update_and_commit_empty(self, tmp_go_app_repo):
