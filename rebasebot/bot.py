@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# pylint: disable=too-many-lines
 
 #    Copyright 2022 Red Hat, Inc.
 #
@@ -55,6 +56,7 @@ logging.basicConfig(
 
 
 MERGE_TMP_BRANCH = "merge-tmp"
+_COMMIT_LOG_FORMAT = "--pretty=format:%H || %s || %aE"
 
 
 def _message_slack(webhook_url: str, msg: str) -> None:
@@ -186,7 +188,7 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
     logging.info(f"Merge base of source/{source.branch} and dest/{dest.branch}: %s", merge_base)
 
     # ancestry_path_merges are merge commits on ancestry path from merge base to destination branch
-    ancestry_path_merges = gitwd.git.log("--pretty=format:%H || %s || %aE", "--ancestry-path", "-r", "--merges",
+    ancestry_path_merges = gitwd.git.log(_COMMIT_LOG_FORMAT, "--ancestry-path", "-r", "--merges",
                                          f"{merge_base}..dest/{dest.branch}").splitlines()
 
     val = '\n'.join(ancestry_path_merges)
@@ -211,12 +213,101 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
             cutoff_commits.append(f"^{parent.hexsha}")
 
     logging.info("Cutoff commits: %s", cutoff_commits)
-    # List all commits on dest/branch and stop at cutoff commits
-    # This should be the list of commits we are carrying on top of the UPSTREAM
-    downstream_commits = gitwd.git.log("--reverse", "--pretty=format:%H || %s || %aE", "--no-merges",
-                                       "--topo-order", *cutoff_commits, f"dest/{dest.branch}")
 
-    logging.info("Identified downstream commits:\n%s", downstream_commits)
+    # Fetch all downstream (non-merge) commits with full formatting.
+    all_downstream_lines = gitwd.git.log(
+        "--reverse", "--topo-order", _COMMIT_LOG_FORMAT, "--no-merges",
+        *cutoff_commits, f"dest/{dest.branch}").splitlines()
+    downstream_shas = {line.split(" || ", 1)[0].strip() for line in all_downstream_lines if line.strip()}
+
+    if not downstream_shas:
+        logging.info("No downstream commits identified")
+        return ""
+
+    ordered_commits = []
+    seen = set()
+
+    # Phase 1: Extract commits from the previous rebase PR first.
+    # The rebase PR carries establish the baseline and must be cherry-picked
+    # before any other downstream commits. PRs merged between when the
+    # rebasebot ran and when the rebase PR was merged sit on the dest
+    # branch first-parent path BEFORE the rebase PR merge. With
+    # --topo-order alone, those first-parent commits can be placed before
+    # the carries, breaking
+    # dependencies (e.g. a PR that modifies a file created by a carry).
+    if last_rebase_merge_commit is not None:
+        # Find the merge on dest that introduced the rebase branch.
+        # This is the PR merge (--no-ff) whose non-first parent is an
+        # ancestor-or-equal to the rebase branch containing the synthetic
+        # rebase merge commit.
+        first_parent_merges = gitwd.git.rev_list(
+            "--reverse", "--first-parent", "--merges",
+            *cutoff_commits, f"dest/{dest.branch}"
+        ).splitlines()
+
+        rebase_pr_merge = None
+        for merge_sha in first_parent_merges:
+            commit = gitwd.commit(merge_sha)
+            # Pick the merge where rebase first enters dest history:
+            # - parent[0] is dest *before* this merge
+            # - parent[1] is the incoming PR branch
+            # So the rebase commit must be reachable from parent[1], but not
+            # yet reachable from parent[0].
+            if gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[1]) and \
+                    not gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[0]):
+                rebase_pr_merge = commit
+                break
+
+        if rebase_pr_merge is not None:
+            logging.info("Found rebase PR merge on dest: %s", rebase_pr_merge.hexsha)
+            # Collect non-merge commits introduced by the previous rebase PR merge:
+            # include everything reachable from merge commit, then subtract
+            # what was already on dest before that merge (parent[0]) and what
+            # was already present at previous rebase cutoffs.
+            rebase_commits = gitwd.git.log(
+                "--reverse", "--topo-order", _COMMIT_LOG_FORMAT,
+                "--no-merges",
+                *cutoff_commits,
+                f"^{rebase_pr_merge.parents[0].hexsha}",
+                rebase_pr_merge.hexsha
+            ).splitlines()
+            # Keep only commits that are part of downstream set and not yet
+            # emitted, so phase 1 establishes the carry baseline first.
+            phase1_lines = []
+            phase1_extras = []
+            for line in rebase_commits:
+                sha = line.split(" || ", 1)[0].strip()
+                if sha not in downstream_shas:
+                    phase1_extras.append(line)
+                    continue
+                if sha not in seen:
+                    ordered_commits.append(line)
+                    seen.add(sha)
+                    phase1_lines.append(line)
+            if phase1_extras:
+                extras_text = "\n".join(phase1_extras)
+                raise RepoException(
+                    "Phase 1 sanity check failed: commits from the rebase PR range are not downstream commits:\n"
+                    f"{extras_text}"
+                )
+            logging.info("Phase 1 - rebase PR carries (%d commits):\n%s",
+                         len(phase1_lines), "\n".join(phase1_lines))
+        else:
+            logging.info("Could not find rebase PR merge on dest, skipping phase 1")
+
+    # Phase 2: All remaining downstream commits in topo-order.
+    phase2_lines = []
+    for line in all_downstream_lines:
+        sha = line.split(" || ", 1)[0].strip()
+        if sha not in seen:
+            ordered_commits.append(line)
+            seen.add(sha)
+            phase2_lines.append(line)
+
+    logging.info("Phase 2 - other downstream commits (%d):\n%s",
+                 len(phase2_lines), "\n".join(phase2_lines) if phase2_lines else "(none)")
+    logging.info("Total downstream commits: %d", len(ordered_commits))
+    downstream_commits = "\n".join(ordered_commits)
     return downstream_commits
 
 
