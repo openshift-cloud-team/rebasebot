@@ -28,7 +28,6 @@ from rebasebot import lifecycle_hooks
 
 
 class TestGoMod:
-
     def _args_stub(_, repo_dir, source) -> MagicMock:
         args = MagicMock()
         args.source = source
@@ -39,10 +38,10 @@ class TestGoMod:
         args.git_email = "unit@test.org"
         return args
 
-    def test_update_and_commit(self, tmp_go_app_repo):
+    def test_update_and_commit(self, tmp_go_app_repo, monkeypatch):
         repo_dir, repo = tmp_go_app_repo
 
-        os.chdir(repo_dir)
+        monkeypatch.chdir(repo_dir)
         os.system("go mod init example.com/foo")
         repo.git.add(all=True)
         repo.git.commit("-m", "Init go module")
@@ -63,10 +62,10 @@ class TestGoMod:
         assert len(commits) == 3
         assert commits[0].message == "UPSTREAM: <drop>: Updating and vendoring go modules after an upstream rebase\n"
 
-    def test_update_and_commit_go_workspace(self, tmp_go_app_repo):
+    def test_update_and_commit_go_workspace(self, tmp_go_app_repo, monkeypatch):
         repo_dir, repo = tmp_go_app_repo
 
-        os.chdir(repo_dir)
+        monkeypatch.chdir(repo_dir)
         os.system("go mod init example.com/foo")
         os.system("go mod tidy")
         os.system("go work init .")
@@ -89,10 +88,10 @@ class TestGoMod:
         assert len(commits) == 3
         assert commits[0].message == "UPSTREAM: <drop>: Updating and vendoring go modules after an upstream rebase\n"
 
-    def test_update_fails_on_broken_go_mod(self, tmp_go_app_repo):
+    def test_update_fails_on_broken_go_mod(self, tmp_go_app_repo, monkeypatch):
         repo_dir, repo = tmp_go_app_repo
 
-        os.chdir(repo_dir)
+        monkeypatch.chdir(repo_dir)
         os.system("go mod init example.com/foo")
         # Write an invalid go.mod that will cause go mod tidy to fail
         with open(os.path.join(repo_dir, "go.mod"), "w") as f:
@@ -115,10 +114,10 @@ class TestGoMod:
 
     # Test how the function handles an empty commit.
     # This should not error out and exit if working properly.
-    def test_update_and_commit_empty(self, tmp_go_app_repo):
+    def test_update_and_commit_empty(self, tmp_go_app_repo, monkeypatch):
         repo_dir, repo = tmp_go_app_repo
 
-        os.chdir(repo_dir)
+        monkeypatch.chdir(repo_dir)
         os.system("go mod init example.com/foo")
         os.system("go mod tidy")
         os.system("go mod vendor")

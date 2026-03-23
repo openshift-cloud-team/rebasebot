@@ -19,6 +19,7 @@
 import builtins
 import logging
 import os
+import shutil
 import sys
 from collections import defaultdict
 from typing import Optional, Tuple
@@ -611,9 +612,25 @@ def _init_working_dir(
     github_app_provider: GithubAppProvider,
     git_username: str,
     git_email: str,
-    workdir: str = "."
+    workdir: str
 ) -> git.Repo:
     gitwd = git.Repo.init(path=workdir)
+
+    # If the source URL changed, stale refs from the previous source repo remain
+    # in the local git store and can corrupt rebase operations (wrong ancestry
+    # checks, wrong commit filtering, wrong cherry-pick detection). Reinitializing
+    # .git is the only safe way to clear them.
+    if "source" in gitwd.remotes and gitwd.remotes["source"].url != source.url:
+        logging.warning(
+            "Source URL changed from %s to %s; reinitializing working directory "
+            "to remove stale refs",
+            gitwd.remotes["source"].url,
+            source.url,
+        )
+        git_dir = gitwd.git_dir
+        gitwd.close()
+        shutil.rmtree(git_dir)
+        gitwd = git.Repo.init(path=workdir)
 
     for remote, url in [
         ("source", source.url),
@@ -626,13 +643,17 @@ def _init_working_dir(
             gitwd.create_remote(remote, url)
 
     with gitwd.config_writer() as config:
-        config.set_value("credential", "username", "x-access-token")
         config.set_value("credential", "useHttpPath", "true")
 
         for repo, credentials in [
             (dest.url, github_app_provider.get_app_token()),
             (rebase.url, github_app_provider.get_cloner_token()),
         ]:
+            config.set_value(
+                f'credential "{repo}"',
+                "username",
+                "x-access-token",
+            )
             config.set_value(
                 f'credential "{repo}"',
                 "helper",
@@ -852,14 +873,14 @@ def run(
         pass
 
     try:
-        os.chdir(working_dir)
         gitwd = _init_working_dir(
             source=source,
             dest=dest,
             rebase=rebase,
             github_app_provider=github_app_provider,
             git_username=git_username,
-            git_email=git_email
+            git_email=git_email,
+            workdir=working_dir,
         )
     except Exception as ex:
         logging.exception(

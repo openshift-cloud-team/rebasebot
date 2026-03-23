@@ -14,7 +14,7 @@
 import os
 from tempfile import TemporaryDirectory
 from typing import Callable, List, Optional
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -32,14 +32,14 @@ def args_dict_to_list(args_dict: dict) -> List[str]:
 
 
 @pytest.fixture
-def valid_args_dict() -> dict:
+def valid_args_dict(tmp_path) -> dict:
     return {
         "source": "https://github.com/kubernetes/autoscaler:master",
         "dest": "openshift/kubernetes-autoscaler:master",
         "rebase": "rebasebot/kubernetes-autoscaler:rebase-bot-master",
         "git-username": "test",
         "git-email": "test@email.com",
-        "working-dir": "tmp",
+        "working-dir": str(tmp_path / "working-dir"),
         "github-app-key": "/credentials/gh-app-key",
         "github-cloner-key": "/credentials/gh-cloner-key",
         "update-go-modules": None,
@@ -121,6 +121,27 @@ class TestCliArgParser:
         captured = capsys.readouterr()
         assert "error:" in captured.err and "GitHub" in captured.err
 
+    def test_working_dir_default_is_persistent_cache_dir(self, valid_args_dict):
+        args_dict = dict(valid_args_dict)
+        args_dict.pop("working-dir")
+        # When XDG cache home is set, default working dir should resolve under it.
+        with TemporaryDirectory(prefix="rebasebot_tests_xdg_cache_") as xdg_cache:
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": xdg_cache}):
+                with patch("sys.argv", ["rebasebot", *args_dict_to_list(args_dict)]):
+                    parsed_args = _parse_cli_arguments()
+            assert parsed_args.working_dir == os.path.join(xdg_cache, "rebasebot")
+
+    def test_working_dir_falls_back_when_xdg_cache_home_empty(self, valid_args_dict):
+        args_dict = dict(valid_args_dict)
+        args_dict.pop("working-dir")
+        # Empty XDG_CACHE_HOME should be treated as unset and fall back to ~/.cache.
+        expected = os.path.join(
+            os.path.expanduser("~"), ".cache", "rebasebot")
+        with patch.dict(os.environ, {"XDG_CACHE_HOME": ""}):
+            with patch("sys.argv", ["rebasebot", *args_dict_to_list(args_dict)]):
+                parsed_args = _parse_cli_arguments()
+        assert parsed_args.working_dir == expected
+
     @patch("rebasebot.bot.run")
     def test_no_credentials_arg(self, mocked_run, valid_args_dict, capsys):
         args_dict = valid_args_dict
@@ -188,3 +209,30 @@ class TestCliArgParser:
         assert passed_gh_app_provider._cloner_app_credentials.app_id == 137497  # default value
         assert passed_gh_app_provider._app_credentials.app_key == b'some cool content'
         assert passed_gh_app_provider._cloner_app_credentials.app_key == b'some cool content'
+
+    @patch("rebasebot.cli._get_github_app_wrapper")
+    @patch("rebasebot.bot.run")
+    def test_persistent_working_dir_when_not_specified(
+            self, mocked_run, mocked_get_github_app_wrapper, valid_args_dict):
+        mocked_get_github_app_wrapper.return_value = MagicMock()
+
+        def _mocked_run(**kwargs):
+            # Mimic bot side-effects by creating the target working directory.
+            os.makedirs(kwargs["working_dir"], exist_ok=True)
+            return True
+
+        mocked_run.side_effect = _mocked_run
+        args_dict = dict(valid_args_dict)
+        args_dict.pop("working-dir")
+
+        # End-to-end CLI path should pass the persistent cache directory to bot.run.
+        with TemporaryDirectory(prefix="rebasebot_tests_xdg_cache_") as xdg_cache:
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": xdg_cache}):
+                with patch("sys.argv", ["rebasebot", *args_dict_to_list(args_dict)]):
+                    with pytest.raises(SystemExit) as exit_exc:
+                        cli_main()
+            assert exit_exc.value.code == 0
+
+            passed_working_dir = mocked_run.call_args.kwargs.get("working_dir")
+            assert passed_working_dir == os.path.join(xdg_cache, "rebasebot")
+            assert os.path.isdir(passed_working_dir)
