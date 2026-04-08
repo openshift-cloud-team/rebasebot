@@ -20,4 +20,6 @@ venv:
 	$(PYTHON) -m venv env
 
 install:
+# On macOS with Homebrew Python, you may get "externally-managed-environment" error.
+# Use `pipx install .` instead, or install within a virtual environment (`make venv`).
 	$(PYTHON) -m pip install --user .
