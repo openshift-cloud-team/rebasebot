@@ -1,0 +1,24 @@
+FROM registry.access.redhat.com/ubi9/python-312
+
+USER root
+
+ARG TARGETARCH=amd64
+ENV GO_VERSION=1.25.9
+ENV PATH="/usr/local/go/bin:$PATH"
+
+RUN dnf install -y tar gzip git make && \
+    ARCH=$(case "${TARGETARCH:-amd64}" in aarch64) echo "arm64" ;; amd64) echo "amd64" ;; *) echo "${TARGETARCH:-amd64}" ;; esac) && \
+    curl -fLsS -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz go/ && \
+    rm -f /tmp/go.tar.gz && \
+    python -m pip install --no-cache-dir uv && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf /var/cache/yum /var/run/dnf*
+
+# Prow expects to be able to check out a repo under /go.
+RUN mkdir -p /go && \
+    chown 1001:1001 /go && \
+    chmod 755 /go
+
+WORKDIR /go
+USER 1001:1001

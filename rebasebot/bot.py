@@ -22,7 +22,6 @@ import os
 import shutil
 import sys
 from collections import defaultdict
-from typing import Optional, Tuple
 
 import git
 import git.compat
@@ -32,10 +31,10 @@ from git.objects import Commit
 from github3.pulls import ShortPullRequest
 from github3.repos.commit import ShortCommit
 from github3.repos.repo import Repository
-from rebasebot.lifecycle_hooks import LifecycleHookScriptException
 
 from rebasebot import lifecycle_hooks
 from rebasebot.github import GithubAppProvider, GitHubBranch
+from rebasebot.lifecycle_hooks import LifecycleHookScriptException
 
 
 class RepoException(Exception):
@@ -45,19 +44,16 @@ class RepoException(Exception):
 
 
 class PullRequestUpdateException(Exception):
-    """An error signaling an issue in updating a pull request
-    """
+    """An error signaling an issue in updating a pull request"""
 
 
-logging.basicConfig(
-    format="%(levelname)s - %(message)s",
-    stream=sys.stdout,
-    level=logging.INFO
-)
+logging.basicConfig(format="%(levelname)s - %(message)s", stream=sys.stdout, level=logging.INFO)
 
 
 MERGE_TMP_BRANCH = "merge-tmp"
 _COMMIT_LOG_FORMAT = "--pretty=format:%H || %s || %aE"
+_MERGE_COMMIT_PARENT_COUNT = 2
+_LOST_LINE_LOG_LIMIT = 10
 
 
 def _message_slack(webhook_url: str, msg: str) -> None:
@@ -155,7 +151,7 @@ def _find_last_rebase_merge_commit(gitwd: git.Repo, ancestry_path_merges) -> Com
 
         # Last rebase merge commit has two parents.
         parents = list(merge.parents)
-        if len(parents) != 2:
+        if len(parents) != _MERGE_COMMIT_PARENT_COUNT:
             continue
 
         # Identify the upstream parent: Merge parent that is reachable from any upstream branch.
@@ -189,10 +185,11 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
     logging.info(f"Merge base of source/{source.branch} and dest/{dest.branch}: %s", merge_base)
 
     # ancestry_path_merges are merge commits on ancestry path from merge base to destination branch
-    ancestry_path_merges = gitwd.git.log(_COMMIT_LOG_FORMAT, "--ancestry-path", "-r", "--merges",
-                                         f"{merge_base}..dest/{dest.branch}").splitlines()
+    ancestry_path_merges = gitwd.git.log(
+        _COMMIT_LOG_FORMAT, "--ancestry-path", "-r", "--merges", f"{merge_base}..dest/{dest.branch}"
+    ).splitlines()
 
-    val = '\n'.join(ancestry_path_merges)
+    val = "\n".join(ancestry_path_merges)
     logging.info(f"""Merges on ancestry-path from merge_base=({merge_base}) to dest/{dest.branch} branch:\n{val}""")
 
     last_rebase_merge_commit = _find_last_rebase_merge_commit(gitwd, ancestry_path_merges)
@@ -204,9 +201,11 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
         # This assumption can be wrong when the previous rebase was from a commit that is no longer reachable from any
         # of the source branches.
         # This is not possible to fix with current design.
-        logging.info(f"Didn't find last rebase merge commit. Likely this is the first upstream rebase for the\
+        logging.info(
+            f"Didn't find last rebase merge commit. Likely this is the first upstream rebase for the\
                      repository. If that's not the case, something is wrong with the last rebase identification.\
-                     Using {merge_base} as cutoff commit")
+                     Using {merge_base} as cutoff commit"
+        )
         cutoff_commits.append(f"^{merge_base}")
     else:
         for parent in last_rebase_merge_commit.parents:
@@ -217,8 +216,8 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
 
     # Fetch all downstream (non-merge) commits with full formatting.
     all_downstream_lines = gitwd.git.log(
-        "--reverse", "--topo-order", _COMMIT_LOG_FORMAT, "--no-merges",
-        *cutoff_commits, f"dest/{dest.branch}").splitlines()
+        "--reverse", "--topo-order", _COMMIT_LOG_FORMAT, "--no-merges", *cutoff_commits, f"dest/{dest.branch}"
+    ).splitlines()
     downstream_shas = {line.split(" || ", 1)[0].strip() for line in all_downstream_lines if line.strip()}
 
     if not downstream_shas:
@@ -242,8 +241,7 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
         # ancestor-or-equal to the rebase branch containing the synthetic
         # rebase merge commit.
         first_parent_merges = gitwd.git.rev_list(
-            "--reverse", "--first-parent", "--merges",
-            *cutoff_commits, f"dest/{dest.branch}"
+            "--reverse", "--first-parent", "--merges", *cutoff_commits, f"dest/{dest.branch}"
         ).splitlines()
 
         rebase_pr_merge = None
@@ -254,8 +252,9 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
             # - parent[1] is the incoming PR branch
             # So the rebase commit must be reachable from parent[1], but not
             # yet reachable from parent[0].
-            if gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[1]) and \
-                    not gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[0]):
+            if gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[1]) and not gitwd.is_ancestor(
+                last_rebase_merge_commit, commit.parents[0]
+            ):
                 rebase_pr_merge = commit
                 break
 
@@ -266,11 +265,13 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
             # what was already on dest before that merge (parent[0]) and what
             # was already present at previous rebase cutoffs.
             rebase_commits = gitwd.git.log(
-                "--reverse", "--topo-order", _COMMIT_LOG_FORMAT,
+                "--reverse",
+                "--topo-order",
+                _COMMIT_LOG_FORMAT,
                 "--no-merges",
                 *cutoff_commits,
                 f"^{rebase_pr_merge.parents[0].hexsha}",
-                rebase_pr_merge.hexsha
+                rebase_pr_merge.hexsha,
             ).splitlines()
             # Keep only commits that are part of downstream set and not yet
             # emitted, so phase 1 establishes the carry baseline first.
@@ -291,8 +292,7 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
                     "Phase 1 sanity check failed: commits from the rebase PR range are not downstream commits:\n"
                     f"{extras_text}"
                 )
-            logging.info("Phase 1 - rebase PR carries (%d commits):\n%s",
-                         len(phase1_lines), "\n".join(phase1_lines))
+            logging.info("Phase 1 - rebase PR carries (%d commits):\n%s", len(phase1_lines), "\n".join(phase1_lines))
         else:
             logging.info("Could not find rebase PR merge on dest, skipping phase 1")
 
@@ -305,8 +305,11 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
             seen.add(sha)
             phase2_lines.append(line)
 
-    logging.info("Phase 2 - other downstream commits (%d):\n%s",
-                 len(phase2_lines), "\n".join(phase2_lines) if phase2_lines else "(none)")
+    logging.info(
+        "Phase 2 - other downstream commits (%d):\n%s",
+        len(phase2_lines),
+        "\n".join(phase2_lines) if phase2_lines else "(none)",
+    )
     logging.info("Total downstream commits: %d", len(ordered_commits))
     downstream_commits = "\n".join(ordered_commits)
     return downstream_commits
@@ -348,11 +351,7 @@ def _detect_conflicting_files(gitwd: git.Repo, sha: str) -> set:
     return conflicted
 
 
-def _check_upstream_content_loss(
-    gitwd: git.Repo,
-    source_branch: str,
-    only_files: set = None
-) -> list:
+def _check_upstream_content_loss(gitwd: git.Repo, source_branch: str, only_files: set | None = None) -> list:
     """
     After a cherry-pick with -Xtheirs, check whether any upstream content
     was silently dropped from files modified by the cherry-picked commit.
@@ -369,9 +368,7 @@ def _check_upstream_content_loss(
     if only_files is not None:
         files_to_check = only_files
     else:
-        files_to_check = gitwd.git.diff(
-            "--name-only", "HEAD~1", "HEAD"
-        ).splitlines()
+        files_to_check = gitwd.git.diff("--name-only", "HEAD~1", "HEAD").splitlines()
 
     results = []
     for f in files_to_check:
@@ -382,12 +379,8 @@ def _check_upstream_content_loss(
             # File doesn't exist on one side — not a content loss scenario
             continue
 
-        upstream_lines = set(
-            line for line in upstream_content.splitlines() if line.strip()
-        )
-        current_lines = set(
-            line for line in current_content.splitlines() if line.strip()
-        )
+        upstream_lines = {line for line in upstream_content.splitlines() if line.strip()}
+        current_lines = {line for line in current_content.splitlines() if line.strip()}
         lost_lines = upstream_lines - current_lines
 
         if lost_lines:
@@ -397,11 +390,7 @@ def _check_upstream_content_loss(
 
 
 def _safe_cherry_pick(
-    gitwd: git.Repo,
-    sha: str,
-    source_branch: str,
-    conflict_policy: str,
-    commit_description: str
+    gitwd: git.Repo, sha: str, source_branch: str, conflict_policy: str, commit_description: str
 ) -> None:
     """
     Cherry-pick a commit with conflict detection based on conflict_policy.
@@ -428,24 +417,18 @@ def _safe_cherry_pick(
         return
 
     # Only verify files that had actual merge conflicts
-    lost_content = _check_upstream_content_loss(
-        gitwd, source_branch, conflicted_files
-    )
+    lost_content = _check_upstream_content_loss(gitwd, source_branch, conflicted_files)
     if not lost_content:
         return
 
     for filename, lost_lines in lost_content:
         logging.warning(
-            "Upstream content may have been dropped from '%s' "
-            "by cherry-pick of: %s",
-            filename, commit_description
+            "Upstream content may have been dropped from '%s' by cherry-pick of: %s", filename, commit_description
         )
-        for line in lost_lines[:10]:
+        for line in lost_lines[:_LOST_LINE_LOG_LIMIT]:
             logging.warning("  lost line: %s", line.strip())
-        if len(lost_lines) > 10:
-            logging.warning(
-                "  ... and %d more lines", len(lost_lines) - 10
-            )
+        if len(lost_lines) > _LOST_LINE_LOG_LIMIT:
+            logging.warning("  ... and %d more lines", len(lost_lines) - _LOST_LINE_LOG_LIMIT)
 
     if conflict_policy == "strict":
         files = ", ".join(f for f, _ in lost_content)
@@ -457,8 +440,18 @@ def _safe_cherry_pick(
         )
 
 
-def _do_rebase(*, gitwd: git.Repo, source: GitHubBranch, dest: GitHubBranch, source_repo: Repository, tag_policy: str,
-               conflict_policy: str = "auto", bot_emails: list, exclude_commits: list, update_go_modules: bool) -> None:
+def _do_rebase(
+    *,
+    gitwd: git.Repo,
+    source: GitHubBranch,
+    dest: GitHubBranch,
+    source_repo: Repository,
+    tag_policy: str,
+    conflict_policy: str = "auto",
+    bot_emails: list,
+    exclude_commits: list,
+    update_go_modules: bool,
+) -> None:
     logging.info("Performing rebase")
 
     allow_bot_squash = len(bot_emails) > 0
@@ -481,8 +474,7 @@ def _do_rebase(*, gitwd: git.Repo, source: GitHubBranch, dest: GitHubBranch, sou
         if update_go_modules:
             # If we find a commit with such name, we know that it is a go mod update commit
             # and append such commit to a list of commits that we want to prune
-            if commit_message == "UPSTREAM: <carry>: Updating and vendoring " + \
-                                 "go modules after an upstream rebase":
+            if commit_message == "UPSTREAM: <carry>: Updating and vendoring " + "go modules after an upstream rebase":
                 logging.info("Dropping Go modules commit %s - %s", sha, commit_message)
                 continue
 
@@ -506,7 +498,7 @@ def _do_rebase(*, gitwd: git.Repo, source: GitHubBranch, dest: GitHubBranch, sou
             sha=sha,
             source_branch=source.branch,
             conflict_policy=conflict_policy,
-            commit_description=f"{sha} - {commit_message}"
+            commit_description=f"{sha} - {commit_message}",
         )
 
     # Here we cherry-pick the bot's commits and then squash them together
@@ -520,7 +512,7 @@ def _do_rebase(*, gitwd: git.Repo, source: GitHubBranch, dest: GitHubBranch, sou
                     sha=commit["sha"],
                     source_branch=source.branch,
                     conflict_policy=conflict_policy,
-                    commit_description=f"{commit['sha']} - {commit['commit_message']}"
+                    commit_description=f"{commit['sha']} - {commit['commit_message']}",
                 )
             gitwd.git.reset("--soft", f"HEAD~{len(value)}")
 
@@ -546,9 +538,15 @@ def _prepare_rebase_branch(gitwd: git.Repo, source: GitHubBranch, dest: GitHubBr
     gitwd.git.checkout(f"dest/{dest.branch}")
 
     # Perform the merge operation.
-    commit = gitwd.git.commit_tree(f"{MERGE_TMP_BRANCH}^{{tree}}",
-                                   "-p", "HEAD", "-p", MERGE_TMP_BRANCH, "-m",
-                                   f"merge upstream/{source.branch} into {dest.branch}")
+    commit = gitwd.git.commit_tree(
+        f"{MERGE_TMP_BRANCH}^{{tree}}",
+        "-p",
+        "HEAD",
+        "-p",
+        MERGE_TMP_BRANCH,
+        "-m",
+        f"merge upstream/{source.branch} into {dest.branch}",
+    )
     logging.info(f"Merging upstream/{source.branch} into {dest.branch}")
 
     # Remove an old rebase branch if it exists
@@ -593,14 +591,11 @@ def _resolve_conflict(gitwd: git.Repo) -> bool:
             # There is a conflict we can't resolve
             logging.info("Unresolvable conflict: %s", line)
             unresolvable = True
-        filename = line[3:].rstrip('\n')
+        filename = line[3:].rstrip("\n")
         # Special characters are escaped
         if filename[0] == filename[-1] == '"':
             filename = filename[1:-1]
-            filename = filename.encode('ascii').\
-                decode('unicode_escape').\
-                encode('latin1').\
-                decode(git.compat.defenc)
+            filename = filename.encode("ascii").decode("unicode_escape").encode("latin1").decode(git.compat.defenc)
         files_to_delete.append(filename)
         logging.info("Deleting conflicting file: %s", filename)
 
@@ -630,8 +625,9 @@ def _resolve_rebase_conflicts(gitwd: git.Repo) -> bool:
         return _resolve_rebase_conflicts(gitwd)
 
 
-def _cherrypick_art_pull_request(gitwd: git.Repo, dest_repo: Repository, dest: GitHubBranch,
-                                 conflict_policy: str = "auto") -> None:
+def _cherrypick_art_pull_request(
+    gitwd: git.Repo, dest_repo: Repository, dest: GitHubBranch, conflict_policy: str = "auto"
+) -> None:
     """
     Looks at the destination repository and if there is an open ART pull request
     that updates the build image, it includes it in the rebase.
@@ -657,7 +653,7 @@ def _cherrypick_art_pull_request(gitwd: git.Repo, dest_repo: Repository, dest: G
                     sha=commit.sha,
                     source_branch=dest.branch,
                     conflict_policy=conflict_policy,
-                    commit_description=f"ART PR commit {commit.sha}"
+                    commit_description=f"ART PR commit {commit.sha}",
                 )
 
 
@@ -688,7 +684,7 @@ def _is_pr_required(gitwd: git.Repo, rebase: GitHubBranch, dest: GitHubBranch) -
     return True
 
 
-def _is_pr_available(dest_repo: Repository, dest: GitHubBranch, rebase: GitHubBranch) -> Tuple[ShortPullRequest, bool]:
+def _is_pr_available(dest_repo: Repository, dest: GitHubBranch, rebase: GitHubBranch) -> tuple[ShortPullRequest, bool]:
     logging.info("Checking for existing pull request")
 
     pull_requests = dest_repo.pull_requests(base=dest.branch, state="open")
@@ -697,7 +693,7 @@ def _is_pr_available(dest_repo: Repository, dest: GitHubBranch, rebase: GitHubBr
     for pr in pull_requests:
         pr_repo = pr.as_dict()["head"]["repo"]["full_name"]
         if pr_repo == f"{rebase.ns}/{rebase.name}" and pr.head.ref == rebase.branch:
-            logging.info("Found existing pull request: \"%s\" %s", pr.title, pr.html_url)
+            logging.info('Found existing pull request: "%s" %s', pr.title, pr.html_url)
             return pr, True
 
     logging.info("No existing pull request found")
@@ -705,13 +701,13 @@ def _is_pr_available(dest_repo: Repository, dest: GitHubBranch, rebase: GitHubBr
 
 
 def _create_pr(
-        *,
-        gh_app: github3.GitHub,
-        dest: GitHubBranch,
-        source: GitHubBranch,
-        rebase: GitHubBranch,
-        gitwd: git.Repo,
-        title_prefix: str = ""
+    *,
+    gh_app: github3.GitHub,
+    dest: GitHubBranch,
+    source: GitHubBranch,
+    rebase: GitHubBranch,
+    gitwd: git.Repo,
+    title_prefix: str = "",
 ) -> str:
     source_head_commit = gitwd.git.rev_parse(f"source/{source.branch}", short=7)
 
@@ -764,7 +760,7 @@ def _init_working_dir(
     github_app_provider: GithubAppProvider,
     git_username: str,
     git_email: str,
-    workdir: str
+    workdir: str,
 ) -> git.Repo:
     gitwd = git.Repo.init(path=workdir)
 
@@ -774,8 +770,7 @@ def _init_working_dir(
     # .git is the only safe way to clear them.
     if "source" in gitwd.remotes and gitwd.remotes["source"].url != source.url:
         logging.warning(
-            "Source URL changed from %s to %s; reinitializing working directory "
-            "to remove stale refs",
+            "Source URL changed from %s to %s; reinitializing working directory to remove stale refs",
             gitwd.remotes["source"].url,
             source.url,
         )
@@ -825,10 +820,10 @@ def _init_working_dir(
     gitwd.remotes.source.fetch(source.branch)
 
     logging.info("Fetching all tags from source")
-    gitwd.remotes.source.fetch(refspec='refs/tags/*:refs/tags/*', filter="blob:none")
+    gitwd.remotes.source.fetch(refspec="refs/tags/*:refs/tags/*", filter="blob:none")
 
     logging.info("Fetching all branches from source")
-    gitwd.remotes.source.fetch(refspec='refs/heads/*:refs/heads/*', update_head_ok=True, filter="blob:none")
+    gitwd.remotes.source.fetch(refspec="refs/heads/*:refs/heads/*", update_head_ok=True, filter="blob:none")
 
     if is_ref_a_tag(gitwd, source.branch):
         logging.info(f"{source.branch} is a tag, but we must work with branches, creating a branch")
@@ -850,8 +845,7 @@ def _init_working_dir(
 
     logging.info("Checking out %s", source_ref)
 
-    logging.info(
-        "Checking for existing rebase branch %s in %s", rebase.branch, rebase.url)
+    logging.info("Checking for existing rebase branch %s in %s", rebase.branch, rebase.url)
 
     rebase_ref = gitwd.git.ls_remote("rebase", rebase.branch, heads=True)
     if len(rebase_ref) > 0:
@@ -868,27 +862,24 @@ def _init_working_dir(
     gitwd.git.checkout("rebase", force=True)
     gitwd.head.reset(index=True, working_tree=True)
     # Clean any untracked files when reusing rebase directory
-    gitwd.git.clean('-fd')
+    gitwd.git.clean("-fd")
 
     return gitwd
 
 
-def _manual_rebase_pr_in_repo(repo: Repository) -> Optional[ShortPullRequest]:
+def _manual_rebase_pr_in_repo(repo: Repository) -> ShortPullRequest | None:
     """Checks for the presence of a rebase/manual label on the pull request."""
     prs = repo.pull_requests()
     for pull_req in prs:
         for label in pull_req.labels:
-            if label['name'] == 'rebase/manual':
+            if label["name"] == "rebase/manual":
                 return pull_req
     return None
 
 
 def _push_rebase_branch(gitwd: git.Repo, rebase: GitHubBranch) -> None:
     """Force pushes current rebase branch to remote rebase branch."""
-    result = gitwd.remotes.rebase.push(
-        refspec=f"HEAD:{rebase.branch}",
-        force=True
-    )
+    result = gitwd.remotes.rebase.push(refspec=f"HEAD:{rebase.branch}", force=True)
 
     if result[0].flags & git.PushInfo.ERROR != 0:
         raise builtins.Exception(f"Error pushing to {rebase}: {result[0].summary}")
@@ -912,19 +903,15 @@ def _update_pr_title(gitwd: git.Repo, pull_req: ShortPullRequest, source: GitHub
 
         logging.info(f"Updating pull request title: {computed_title}")
         if not pull_req.update(title=computed_title):
-            raise builtins.Exception(f"Error updating title for pull request: {pull_req.html_url}")
+            raise PullRequestUpdateException(f"Error updating title for pull request: {pull_req.html_url}")
     else:
-        logging.info(f"Open pull request title \"{pull_req.title}\" does not match rebasebot format."
-                     "Keeping the current title.")
+        logging.info(
+            f'Open pull request title "{pull_req.title}" does not match rebasebot format. Keeping the current title.'
+        )
 
 
 def _report_result(  # pylint: disable=R0917
-    needs_rebase: bool,
-    pr_required: bool,
-    pr_available: bool,
-    pr_url: str,
-    dest_url: str,
-    slack_webhook: str
+    needs_rebase: bool, pr_required: bool, pr_available: bool, pr_url: str, dest_url: str, slack_webhook: str
 ) -> None:
     """Reports the result of sucessful rebasebot run to slack and log."""
     message = None
@@ -942,22 +929,21 @@ def _report_result(  # pylint: disable=R0917
             # Case 2: repos were updated recently, but we already have an open PR.
             # We updated the exiting PR.
             message = f"I updated existing rebase PR: {pr_url}"
+    elif pr_url:
+        if pr_required and not pr_available:
+            # Case 3: No rebase needed, but hooks made changes requiring a new PR.
+            message = f"I created a new rebase PR (hooks enabled): {pr_url}"
+        elif pr_required and pr_available:
+            # Case 4: No rebase needed, but hooks made changes to an existing PR.
+            message = f"I updated existing rebase PR (hooks enabled): {pr_url}"
+        elif pr_available:
+            # Case 5: we created a PR, but no changes were done to the repos after that.
+            # Just inform that the PR is in a good shape.
+            message = f"PR {pr_url} already contains the latest changes"
     else:
-        if pr_url is not None and pr_url != "":
-            if pr_required and not pr_available:
-                # Case 3: No rebase needed, but hooks made changes requiring a new PR.
-                message = f"I created a new rebase PR (hooks enabled): {pr_url}"
-            elif pr_required and pr_available:
-                # Case 4: No rebase needed, but hooks made changes to an existing PR.
-                message = f"I updated existing rebase PR (hooks enabled): {pr_url}"
-            elif pr_available:
-                # Case 5: we created a PR, but no changes were done to the repos after that.
-                # Just inform that the PR is in a good shape.
-                message = f"PR {pr_url} already contains the latest changes"
-        else:
-            # Case 6: source and dest repos are the same (git diff is empty), and there is no PR.
-            # Just inform that there is nothing to update in the dest repository.
-            message = f"Destination repo {dest_url} already contains the latest changes"
+        # Case 6: source and dest repos are the same (git diff is empty), and there is no PR.
+        # Just inform that there is nothing to update in the dest repository.
+        message = f"Destination repo {dest_url} already contains the latest changes"
 
     if message is not None:
         logging.info(message)
@@ -983,7 +969,7 @@ def run(
     dry_run: bool = False,
     ignore_manual_label: bool = False,
     always_run_hooks: bool = False,
-    title_prefix: str = ""
+    title_prefix: str = "",
 ) -> bool:
     """Run Rebase Bot."""
     gh_app = github_app_provider.github_app
@@ -1007,17 +993,14 @@ def run(
                     f"Repo {dest_repo.clone_url} has PR {pull_req.html_url} with 'rebase/manual' label, aborting"
                 )
                 _message_slack(
-                        slack_webhook,
-                        f"Repo {dest_repo.clone_url} has PR {pull_req.html_url} with 'rebase/manual' label, aborting"
+                    slack_webhook,
+                    f"Repo {dest_repo.clone_url} has PR {pull_req.html_url} with 'rebase/manual' label, aborting",
                 )
                 return True
 
     except Exception as ex:
         logging.exception("error fetching repo information from GitHub")
-        _message_slack(
-            slack_webhook,
-            f"I got an error fetching repo information from GitHub: {ex}"
-        )
+        _message_slack(slack_webhook, f"I got an error fetching repo information from GitHub: {ex}")
         return False
 
     try:
@@ -1038,15 +1021,17 @@ def run(
     except Exception as ex:
         logging.exception(
             "error initializing the git directory with remotes: ",
-            extra={"working_dir": working_dir,
-                   "source_repo": source.url,
-                   "dest_repo": dest.url,
-                   "rebase_repo": rebase.url}
+            extra={
+                "working_dir": working_dir,
+                "source_repo": source.url,
+                "dest_repo": dest.url,
+                "rebase_repo": rebase.url,
+            },
         )
         _message_slack(
             slack_webhook,
             f"I got an error initializing the git directory with remotes: source repo {source.url}, "
-            f"destination repo {dest.url}, rebase repo {rebase.url}: {ex}"
+            f"destination repo {dest.url}, rebase repo {rebase.url}: {ex}",
         )
         return False
 
@@ -1054,10 +1039,7 @@ def run(
         hooks.fetch_hook_scripts(gitwd=gitwd, github_app_provider=github_app_provider)
     except Exception as ex:
         logging.exception("error fetching lifecycle hook scripts")
-        _message_slack(
-            slack_webhook,
-            f"Failed to fetch lifecycle hook scripts: {ex}"
-        )
+        _message_slack(slack_webhook, f"Failed to fetch lifecycle hook scripts: {ex}")
         return False
 
     try:
@@ -1075,7 +1057,7 @@ def run(
                 conflict_policy=conflict_policy,
                 bot_emails=bot_emails,
                 exclude_commits=exclude_commits,
-                update_go_modules=update_go_modules
+                update_go_modules=update_go_modules,
             )
             hooks.execute_scripts_for_hook(hook=lifecycle_hooks.LifecycleHook.POST_REBASE)
             _cherrypick_art_pull_request(gitwd, dest_repo, dest, conflict_policy)
@@ -1086,8 +1068,10 @@ def run(
             hooks.execute_scripts_for_hook(hook=lifecycle_hooks.LifecycleHook.POST_REBASE)
 
     except (RepoException, LifecycleHookScriptException) as ex:
-        logging.error(f"Manual intervention is needed to rebase {source.url}:{source.branch} "
-                      f"into {dest.ns}/{dest.name}:{dest.branch}")
+        logging.error(
+            f"Manual intervention is needed to rebase {source.url}:{source.branch} "
+            f"into {dest.ns}/{dest.name}:{dest.branch}"
+        )
         _message_slack(
             slack_webhook,
             f"Manual intervention is needed to rebase "
@@ -1097,8 +1081,9 @@ def run(
         )
         return False
     except Exception as ex:
-        logging.exception(f"exception when trying to rebase {source.url}:{source.branch} "
-                          f"into {dest.ns}/{dest.name}:{dest.branch}")
+        logging.exception(
+            f"exception when trying to rebase {source.url}:{source.branch} into {dest.ns}/{dest.name}:{dest.branch}"
+        )
 
         _message_slack(
             slack_webhook,
@@ -1125,8 +1110,10 @@ def run(
             hooks.execute_scripts_for_hook(hook=lifecycle_hooks.LifecycleHook.PRE_PUSH_REBASE_BRANCH)
             _push_rebase_branch(gitwd, rebase)
         except LifecycleHookScriptException as ex:
-            logging.error(f"Manual intervention is needed to rebase {source.url}:{source.branch} "
-                          f"into {dest.ns}/{dest.name}:{dest.branch}")
+            logging.error(
+                f"Manual intervention is needed to rebase {source.url}:{source.branch} "
+                f"into {dest.ns}/{dest.name}:{dest.branch}"
+            )
             _message_slack(
                 slack_webhook,
                 f"Manual intervention is needed to rebase "
@@ -1139,7 +1126,7 @@ def run(
             logging.exception(f"error pushing to {rebase.ns}/{rebase.name}:{rebase.branch}")
             _message_slack(
                 slack_webhook,
-                f"I got an exception pushing to " f"{rebase.ns}/{rebase.name}:{rebase.branch}: {ex}",
+                f"I got an exception pushing to {rebase.ns}/{rebase.name}:{rebase.branch}: {ex}",
             )
             return False
 
@@ -1172,8 +1159,10 @@ def run(
                 logging.info("No PR required - no changes between rebase and dest.")
                 pr_url = None
     except LifecycleHookScriptException as ex:
-        logging.error(f"Manual intervention is needed to rebase {source.url}:{source.branch} "
-                      f"into {dest.ns}/{dest.name}:{dest.branch}")
+        logging.error(
+            f"Manual intervention is needed to rebase {source.url}:{source.branch} "
+            f"into {dest.ns}/{dest.name}:{dest.branch}"
+        )
         _message_slack(
             slack_webhook,
             f"Manual intervention is needed to rebase "
@@ -1184,18 +1173,12 @@ def run(
         return False
     except requests.exceptions.HTTPError as ex:
         logging.error(f"Failed to create a pull request: {ex}\n Response: %s", ex.response.text)
-        _message_slack(
-            slack_webhook,
-            f"Failed to create a pull request: {ex}\n Response: {ex.response.text}"
-        )
+        _message_slack(slack_webhook, f"Failed to create a pull request: {ex}\n Response: {ex.response.text}")
 
         return False
     except Exception as ex:
         logging.exception(f"error creating a rebase PR in {dest.ns}/{dest.name}")
-        _message_slack(
-            slack_webhook,
-            f"I got an error creating a rebase PR in {dest.ns}/{dest.name}: {ex}"
-        )
+        _message_slack(slack_webhook, f"I got an error creating a rebase PR in {dest.ns}/{dest.name}: {ex}")
 
         return False
 

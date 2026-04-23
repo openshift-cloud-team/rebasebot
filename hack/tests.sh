@@ -21,6 +21,7 @@ REPO_ROOT=$(dirname "${BASH_SOURCE}")/..
 
 OPENSHIFT_CI=${OPENSHIFT_CI:-""}
 ARTIFACT_DIR=${ARTIFACT_DIR:-""}
+PYTHON_BIN=${PYTHON_BIN:-python}
 
 PYTEST_ARGS=${PYTEST_ARGS:-"-vv --cov=rebasebot"}
 
@@ -33,8 +34,9 @@ if [ "$OPENSHIFT_CI" == "true" ] && [ -n "$ARTIFACT_DIR" ] && [ -d "$ARTIFACT_DI
   # point gopath to /tmp since go mod and go tidy is using during tests
   export GOPATH=/tmp/temp_gopath
 
-  PYTEST_ARGS="${PYTEST_ARGS} --cov-report=term --cov-report=html:${ARTIFACT_DIR}/cov-report --junitxml=${ARTIFACT_DIR}/junit_rebasebot_tests.xml"
+  # Disable pytest's cache plugin because CI checkouts under /go are read-only.
+  PYTEST_ARGS="${PYTEST_ARGS} -p no:cacheprovider --cov-report=term --cov-report=html:${ARTIFACT_DIR}/cov-report --junitxml=${ARTIFACT_DIR}/junit_rebasebot_tests.xml"
 fi
 
 set -x
-pytest $PYTEST_ARGS "$REPO_ROOT"
+"$PYTHON_BIN" -m pytest $PYTEST_ARGS "$REPO_ROOT"
