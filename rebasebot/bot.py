@@ -1135,10 +1135,10 @@ def run(
         try:
             _update_pr_title(gitwd, pull_req, source, dest)
         except Exception as ex:
-            logging.exception(f"error changing title of PR {dest.ns}/{dest.name} #{pull_req.id}")
+            logging.exception(f"error changing title of PR {dest.ns}/{dest.name} #{pull_req.number}")
             _message_slack(
                 slack_webhook,
-                f"I got an error changing title of PR {dest.ns}/{dest.name} #{pull_req.id}: {ex}",
+                f"I got an error changing title of PR {dest.ns}/{dest.name} #{pull_req.number}: {ex}",
             )
             return False
 
