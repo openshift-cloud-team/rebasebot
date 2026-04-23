@@ -70,6 +70,8 @@ source env/bin/activate
 make install
 ```
 
+When working in a new workspace/worktree, run `make deps` inside that worktree before running tests or lint. Each worktree has its own local `env/`, so dependencies are not shared from another checkout.
+
 ### Testing
 
 ```bash
