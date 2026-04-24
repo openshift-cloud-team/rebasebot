@@ -417,7 +417,8 @@ class TestRebases:
         args.dry_run = False
         result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
         mocked_message_slack.assert_called_once_with(
-            None, f"Repo {dest.clone_url} has PR {pr.html_url} with 'rebase/manual' label, aborting"
+            None,
+            f"Repo {dest.clone_url} has PR {pr.html_url} with 'rebase/manual' label, aborting",
         )
 
         assert result
@@ -477,7 +478,12 @@ class TestRebases:
 
     @patch("rebasebot.lifecycle_hooks._fetch_file_from_github")
     def test_lifecyclehooks_remote(
-        self, mock_fetch_file_from_github, init_test_repositories, fake_github_provider, tmpdir, caplog
+        self,
+        mock_fetch_file_from_github,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
+        caplog,
     ):
         source, rebase, dest = init_test_repositories
 
@@ -513,7 +519,11 @@ git commit -m 'UPSTREAM: <drop>: test-hook-script generated files'
         result = cli.rebasebot_run(args, slack_webhook=None, github_app_wrapper=fake_github_provider)
 
         mock_fetch_file_from_github.assert_called_once_with(
-            ANY, "openshift-eng", "rebasebot", "main", "tests/data/test-hook-script.sh"
+            ANY,
+            "openshift-eng",
+            "rebasebot",
+            "main",
+            "tests/data/test-hook-script.sh",
         )
         # mock_fetch_branch.assert_called_once_with(
         # ANY, "github.com/openshift-eng/rebasebot", "main",
@@ -740,7 +750,10 @@ touch post-rebase-hook.success"""
         assert "post-rebase-hook.success" in os.listdir(tmpdir)
 
     def test_hooks_not_run_when_no_rebase_needed_and_flag_false(
-        self, init_test_repositories, fake_github_provider, tmpdir
+        self,
+        init_test_repositories,
+        fake_github_provider,
+        tmpdir,
     ):
         """Test that hooks DON'T run when --always-run-hooks is False and no rebase is needed."""
         source, rebase, dest = init_test_repositories

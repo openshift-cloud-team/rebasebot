@@ -73,16 +73,25 @@ class TestCliArgParser:
             (
                 "https://github.com/kubernetes/autoscaler:master",
                 GitHubBranch(
-                    url="https://github.com/kubernetes/autoscaler", ns="kubernetes", name="autoscaler", branch="master"
+                    url="https://github.com/kubernetes/autoscaler",
+                    ns="kubernetes",
+                    name="autoscaler",
+                    branch="master",
                 ),
             ),
             (
                 "kubernetes/autoscaler:master",
                 GitHubBranch(
-                    url="https://github.com/kubernetes/autoscaler", ns="kubernetes", name="autoscaler", branch="master"
+                    url="https://github.com/kubernetes/autoscaler",
+                    ns="kubernetes",
+                    name="autoscaler",
+                    branch="master",
                 ),
             ),
-            ("foo/bar:baz", GitHubBranch(url="https://github.com/foo/bar", ns="foo", name="bar", branch="baz")),
+            (
+                "foo/bar:baz",
+                GitHubBranch(url="https://github.com/foo/bar", ns="foo", name="bar", branch="baz"),
+            ),
         ),
     )
     @pytest.mark.parametrize("arg", ["source", "dest", "rebase"])
@@ -204,7 +213,10 @@ class TestCliArgParser:
     @patch("rebasebot.cli._get_github_app_wrapper")
     @patch("rebasebot.bot.run")
     def test_persistent_working_dir_when_not_specified(
-        self, mocked_run, mocked_get_github_app_wrapper, valid_args_dict
+        self,
+        mocked_run,
+        mocked_get_github_app_wrapper,
+        valid_args_dict,
     ):
         mocked_get_github_app_wrapper.return_value = MagicMock()
 

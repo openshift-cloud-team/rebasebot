@@ -11,7 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 """This module manages user provided scripts that are executed during the rebase process."""
 
 import logging
@@ -126,7 +125,14 @@ class LifecycleHookScript:
             raise ValueError(f"Failed to retrieve script from git reference {git_path}") from e
 
     def _fetch_from_github_api(
-        self, *, github, organization: str, name: str, git_repo_path_to_script: str, branch: str, script_file_path: str
+        self,
+        *,
+        github,
+        organization: str,
+        name: str,
+        git_repo_path_to_script: str,
+        branch: str,
+        script_file_path: str,
     ):
         """Fetches script from GitHub API."""
         try:
@@ -163,7 +169,8 @@ class LifecycleHookScript:
             return
 
         remote_git_pattern_match = re.match(
-            "^git:(https://([^/]+)/([^/]+)/([^/]+))/([^:]+?):(.*)$", self.script_location
+            "^git:(https://([^/]+)/([^/]+)/([^/]+))/([^:]+?):(.*)$",
+            self.script_location,
         )
         local_git_pattern_match = re.match("^git:([^:]+):([^:]+)$", self.script_location)
 
@@ -238,7 +245,8 @@ class LifecycleHookScript:
 
 def _fetch_file_from_github(github, organization, name, branch, git_repo_path_to_script) -> Contents:
     return github.github_cloner_app.repository(owner=organization, repository=name).file_contents(
-        git_repo_path_to_script, ref=branch
+        git_repo_path_to_script,
+        ref=branch,
     )
 
 

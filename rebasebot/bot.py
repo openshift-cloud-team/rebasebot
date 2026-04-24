@@ -1,6 +1,5 @@
 #!/usr/bin/python
 # pylint: disable=too-many-lines
-
 #    Copyright 2022 Red Hat, Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -48,8 +47,6 @@ class PullRequestUpdateException(Exception):
 
 
 logging.basicConfig(format="%(levelname)s - %(message)s", stream=sys.stdout, level=logging.INFO)
-
-
 MERGE_TMP_BRANCH = "merge-tmp"
 _COMMIT_LOG_FORMAT = "--pretty=format:%H || %s || %aE"
 _MERGE_COMMIT_PARENT_COUNT = 2
@@ -105,7 +102,11 @@ def _is_pr_merged(pr_number: int, source_repo: Repository, gitwd: git.Repo, sour
 
 
 def _add_to_rebase(
-    commit_message: str, source_repo: Repository, tag_policy: str, gitwd: git.Repo, source_branch: str
+    commit_message: str,
+    source_repo: Repository,
+    tag_policy: str,
+    gitwd: git.Repo,
+    source_branch: str,
 ) -> bool:
     valid_tag_policy = ["soft", "strict", "none"]
     if tag_policy not in valid_tag_policy:
@@ -186,7 +187,11 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
 
     # ancestry_path_merges are merge commits on ancestry path from merge base to destination branch
     ancestry_path_merges = gitwd.git.log(
-        _COMMIT_LOG_FORMAT, "--ancestry-path", "-r", "--merges", f"{merge_base}..dest/{dest.branch}"
+        _COMMIT_LOG_FORMAT,
+        "--ancestry-path",
+        "-r",
+        "--merges",
+        f"{merge_base}..dest/{dest.branch}",
     ).splitlines()
 
     val = "\n".join(ancestry_path_merges)
@@ -216,7 +221,12 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
 
     # Fetch all downstream (non-merge) commits with full formatting.
     all_downstream_lines = gitwd.git.log(
-        "--reverse", "--topo-order", _COMMIT_LOG_FORMAT, "--no-merges", *cutoff_commits, f"dest/{dest.branch}"
+        "--reverse",
+        "--topo-order",
+        _COMMIT_LOG_FORMAT,
+        "--no-merges",
+        *cutoff_commits,
+        f"dest/{dest.branch}",
     ).splitlines()
     downstream_shas = {line.split(" || ", 1)[0].strip() for line in all_downstream_lines if line.strip()}
 
@@ -241,7 +251,11 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
         # ancestor-or-equal to the rebase branch containing the synthetic
         # rebase merge commit.
         first_parent_merges = gitwd.git.rev_list(
-            "--reverse", "--first-parent", "--merges", *cutoff_commits, f"dest/{dest.branch}"
+            "--reverse",
+            "--first-parent",
+            "--merges",
+            *cutoff_commits,
+            f"dest/{dest.branch}",
         ).splitlines()
 
         rebase_pr_merge = None
@@ -253,7 +267,8 @@ def _identify_downstream_commits(gitwd: git.Repo, source: GitHubBranch, dest: Gi
             # So the rebase commit must be reachable from parent[1], but not
             # yet reachable from parent[0].
             if gitwd.is_ancestor(last_rebase_merge_commit, commit.parents[1]) and not gitwd.is_ancestor(
-                last_rebase_merge_commit, commit.parents[0]
+                last_rebase_merge_commit,
+                commit.parents[0],
             ):
                 rebase_pr_merge = commit
                 break
@@ -389,8 +404,12 @@ def _check_upstream_content_loss(gitwd: git.Repo, source_branch: str, only_files
     return results
 
 
-def _safe_cherry_pick(
-    gitwd: git.Repo, sha: str, source_branch: str, conflict_policy: str, commit_description: str
+def _safe_cherry_pick(  # hi
+    gitwd: git.Repo,
+    sha: str,
+    source_branch: str,
+    conflict_policy: str,
+    commit_description: str,
 ) -> None:
     """
     Cherry-pick a commit with conflict detection based on conflict_policy.
@@ -423,7 +442,9 @@ def _safe_cherry_pick(
 
     for filename, lost_lines in lost_content:
         logging.warning(
-            "Upstream content may have been dropped from '%s' by cherry-pick of: %s", filename, commit_description
+            "Upstream content may have been dropped from '%s' by cherry-pick of: %s",
+            filename,
+            commit_description,
         )
         for line in lost_lines[:_LOST_LINE_LOG_LIMIT]:
             logging.warning("  lost line: %s", line.strip())
@@ -626,7 +647,10 @@ def _resolve_rebase_conflicts(gitwd: git.Repo) -> bool:
 
 
 def _cherrypick_art_pull_request(
-    gitwd: git.Repo, dest_repo: Repository, dest: GitHubBranch, conflict_policy: str = "auto"
+    gitwd: git.Repo,
+    dest_repo: Repository,
+    dest: GitHubBranch,
+    conflict_policy: str = "auto",  # hi
 ) -> None:
     """
     Looks at the destination repository and if there is an open ART pull request
@@ -911,7 +935,12 @@ def _update_pr_title(gitwd: git.Repo, pull_req: ShortPullRequest, source: GitHub
 
 
 def _report_result(  # pylint: disable=R0917
-    needs_rebase: bool, pr_required: bool, pr_available: bool, pr_url: str, dest_url: str, slack_webhook: str
+    needs_rebase: bool,
+    pr_required: bool,
+    pr_available: bool,
+    pr_url: str,
+    dest_url: str,
+    slack_webhook: str,
 ) -> None:
     """Reports the result of sucessful rebasebot run to slack and log."""
     message = None
