@@ -30,7 +30,18 @@ from rebasebot.github import GithubAppProvider, parse_github_branch
 
 
 class LifecycleHookScriptException(Exception):
-    """LifecycleHookScriptException is a exception raised as a result of lifecycle hook script failure."""
+    """LifecycleHookScriptException is raised when a lifecycle hook script fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        script_index: int | None = None,
+        script_location: str | None = None,
+    ):
+        super().__init__(message)
+        self.script_index = script_index
+        self.script_location = script_location
 
 
 class LifecycleHook(Enum):
@@ -339,9 +350,18 @@ class LifecycleHooks:
             for script in hooks:
                 script.fetch_script(temp_hook_dir=self.tmp_hook_scripts_dir, gitwd=gitwd, github=github_app_provider)
 
-    def execute_scripts_for_hook(self, hook: LifecycleHook):
-        """Executes all scripts in the given lifecycle hook."""
-        for script in self.hooks.get(hook, []):
+    def get_scripts_for_hook(self, hook: LifecycleHook) -> list[LifecycleHookScript]:
+        """Returns the configured scripts for the given lifecycle hook."""
+        return self.hooks.get(hook, [])
+
+    def get_script_locations_for_hook(self, hook: LifecycleHook) -> list[str]:
+        """Returns configured script locations for the given lifecycle hook."""
+        return [script.script_location for script in self.get_scripts_for_hook(hook)]
+
+    def execute_scripts_for_hook(self, hook: LifecycleHook, start_index: int = 0):
+        """Executes hook scripts starting at the given index."""
+        scripts = self.get_scripts_for_hook(hook)
+        for index, script in enumerate(scripts[start_index:], start=start_index):
             logging.info(f"Running {hook} lifecycle hook {script}")
             try:
                 result = script(cwd=self.working_dir)
@@ -355,4 +375,8 @@ class LifecycleHooks:
             except subprocess.CalledProcessError as err:
                 logging.error(f"Script {script} failed with exit code {err.returncode}")
                 message = f"{hook} script {script} failed with exit-code {err.returncode}"
-                raise LifecycleHookScriptException(message) from err
+                raise LifecycleHookScriptException(
+                    message,
+                    script_index=index,
+                    script_location=script.script_location,
+                ) from err
