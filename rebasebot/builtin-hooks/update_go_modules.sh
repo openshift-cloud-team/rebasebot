@@ -57,6 +57,17 @@ process_go_workspace_updates() {
         exit 1
     fi
 
+    while IFS= read -r -d '' go_mod_file; do
+        local module_base_path
+        module_base_path=$(dirname "$go_mod_file")
+
+        echo "Running go mod tidy for $module_base_path"
+        if ! (cd "$module_base_path" && go mod tidy); then
+            echo "Unable to run 'go mod tidy' in $module_base_path" >&2
+            exit 1
+        fi
+    done < <(find . -name 'go.mod' -not -path '*/vendor/*' -print0)
+
     echo "Running go work vendor"
     if ! go work vendor; then
         echo "Unable to run 'go work vendor'" >&2
